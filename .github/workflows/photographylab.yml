@@ -36,7 +36,6 @@ jobs:
             libwebp-dev libjxl-dev libimath-dev libopenexr-dev zlib1g-dev \
             libpotrace-dev libarchive-dev libmarisa-dev libcolord-dev \
             libcolord-gtk-dev libcups2-dev libinih-dev libomp-dev llvm clang \
-            libonnxruntime-dev \
             qt6-base-dev qt6-declarative-dev qt6-wayland \
             qml6-module-qtquick qml6-module-qtquick-controls \
             qml6-module-qtquick-layouts qml6-module-qtquick-window \
@@ -63,6 +62,22 @@ jobs:
           git submodule update --init --depth 1 \
             src/external/rawspeed src/external/LibRaw src/external/whereami \
             src/external/OpenCL src/external/libxcf
+
+      # the runner's token gets "release not found" from the GitHub API for
+      # microsoft/onnxruntime, which stops FindONNXRuntime.cmake's download
+      # (it fetches a checksum there first), and Ubuntu 24.04 has no
+      # libonnxruntime-dev, so the archive is fetched by its plain download
+      # URL; the find module looks in src/external/onnxruntime first
+      - name: Fetch ONNX Runtime
+        run: |
+          ver=$(sed -n 's/^set(ONNXRUNTIME_VERSION "\([^"]*\)".*/\1/p' cmake/modules/FindONNXRuntime.cmake)
+          pkg=onnxruntime-linux-x64-$ver.tgz
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$pkg" \
+            "https://github.com/microsoft/onnxruntime/releases/download/v$ver/$pkg"
+          sha256sum "$RUNNER_TEMP/$pkg"
+          mkdir -p src/external/onnxruntime
+          tar -xzf "$RUNNER_TEMP/$pkg" -C src/external/onnxruntime --strip-components=1
+          ls src/external/onnxruntime/lib
 
       - name: Build AppImage
         run: ./packaging/photographylab/build-appimage.sh
