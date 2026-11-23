@@ -154,7 +154,43 @@ int main(int argc, char *argv[])
         QCoreApplication::quit();
       });
     };
-    if(!files.isEmpty())
+    if(!files.isEmpty() && qEnvironmentVariableIsSet("PLAB_AI_DENOISE"))
+    {
+      // switch AI on, fetch the model when missing, denoise the photo, and
+      // take the shot once the denoised DNG is open
+      auto started = std::make_shared<bool>(false);
+      // also re-reads the AI state, which the steps below wait on
+      QObject::connect(&lab, &LabController::imageChanged, &lab, [&lab] {
+        lab.setAiEnabled(true);
+      });
+      auto fetched = std::make_shared<bool>(false);
+      QObject::connect(&lab, &LabController::aiChanged, &lab, [&lab, started, fetched] {
+        if(!lab.hasImage() || !lab.aiEnabled() || *started) return;
+        if(lab.aiModel() == 0 && lab.aiDownload() < 0)
+        {
+          // one try: a failed download quits rather than looping
+          if(*fetched)
+          {
+            QCoreApplication::exit(1);
+            return;
+          }
+          *fetched = true;
+          lab.downloadAiModel();
+        }
+        if(lab.aiModel() == 1)
+        {
+          *started = true;
+          lab.aiDenoise(100.0);
+        }
+      });
+      QObject::connect(&lab, &LabController::previewChanged, &lab, [shoot, &lab] {
+        if(!lab.busy() && lab.imageName().contains(QLatin1String("raw-denoise"))) shoot(800);
+      });
+      QObject::connect(&lab, &LabController::messageChanged, &lab, [&lab] {
+        fprintf(stderr, "photographylab: %s\n", qPrintable(lab.message()));
+      });
+    }
+    else if(!files.isEmpty())
       QObject::connect(&lab, &LabController::previewChanged, &lab, [shoot, &lab] {
         if(!lab.busy()) shoot(800);
       });

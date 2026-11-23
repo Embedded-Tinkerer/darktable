@@ -88,6 +88,13 @@ class LabController : public QObject
   Q_PROPERTY(int exportTotal READ exportTotal NOTIFY exportChanged)
   Q_PROPERTY(QString exportFile READ exportFile NOTIFY exportChanged)
   Q_PROPERTY(QUrl lastExportFolder READ lastExportFolder NOTIFY exportChanged)
+  // AI: compiled in, switched on, raw-denoise model (0 missing, 1 ready, -1 n/a)
+  Q_PROPERTY(bool aiBuilt READ aiBuilt NOTIFY aiChanged)
+  Q_PROPERTY(bool aiEnabled READ aiEnabled NOTIFY aiChanged)
+  Q_PROPERTY(int aiModel READ aiModel NOTIFY aiChanged)
+  // -1 when no download runs, else 0..1
+  Q_PROPERTY(double aiDownload READ aiDownload NOTIFY aiChanged)
+  Q_PROPERTY(bool aiDenoising READ aiDenoising NOTIFY aiChanged)
 
 public:
   LabController(PreviewProvider *provider, ThumbnailProvider *thumbs,
@@ -111,6 +118,11 @@ public:
   int exportTotal() const { return m_exportTotal; }
   QString exportFile() const { return m_exportFile; }
   QUrl lastExportFolder() const { return m_lastExportFolder; }
+  bool aiBuilt() const { return m_aiBuilt; }
+  bool aiEnabled() const { return m_aiEnabled; }
+  int aiModel() const { return m_aiModel; }
+  double aiDownload() const { return m_aiDownload; }
+  bool aiDenoising() const { return m_aiDenoising; }
   QStringList styles() const { return m_styles; }
   QString currentStyle() const { return m_style; }
   QString message() const { return m_message; }
@@ -148,6 +160,11 @@ public:
   Q_INVOKABLE void exportSelected(const QUrl &folder, const QVariantMap &options);
   Q_INVOKABLE void cancelExport();
   Q_INVOKABLE void openImage(int imgid);
+  Q_INVOKABLE void setAiEnabled(bool on);
+  Q_INVOKABLE void downloadAiModel();
+  Q_INVOKABLE void cancelAiDownload();
+  // the open photo, strength 0..100; opens the denoised DNG when done
+  Q_INVOKABLE void aiDenoise(double strength);
   Q_INVOKABLE void openNeighbour(int step);
 
   Q_INVOKABLE void openFile(const QUrl &url);
@@ -177,6 +194,7 @@ signals:
   void lutsChanged();
   void lutCollectionChanged();
   void exportChanged();
+  void aiChanged();
   void stylesChanged();
   void currentStyleChanged();
   void messageChanged();
@@ -196,6 +214,10 @@ signals:
   void requestImportStyles(const QString &path);
   void requestExport(const QString &path, int quality);
   void requestOpenId(int imgid);
+  void requestAiState();
+  void requestAiEnabled(bool on);
+  void requestAiDownload();
+  void requestAiDenoise(int imgid, double strength);
   void requestImportFolder(const QString &folder, bool recursive);
   void requestFolders();
   void requestImages(int filmId, int minRating, bool rejectedOnly, int generation);
@@ -252,6 +274,11 @@ private:
   int m_exportTotal = 0;
   QString m_exportFile;
   QUrl m_lastExportFolder;
+  bool m_aiBuilt = false;
+  bool m_aiEnabled = false;
+  int m_aiModel = -1;
+  double m_aiDownload = -1.0;
+  bool m_aiDenoising = false;
   int m_anchor = -1;
   QVariantMap m_thumbVersions;
   QVariantMap m_copied;

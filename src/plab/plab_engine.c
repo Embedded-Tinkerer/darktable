@@ -42,6 +42,15 @@
 #include "imageio/imageio_common.h"
 #include "imageio/imageio_module.h"
 
+#ifdef HAVE_AI
+#include "common/ai/restore.h"
+#include "common/ai/restore_raw_bayer.h"
+#include "common/ai/restore_raw_linear.h"
+#include "common/ai_models.h"
+#include "common/exif.h"
+#include "imageio/imageio_dng.h"
+#endif
+
 #include <gio/gio.h>
 #include <glib/gstdio.h>
 #include <stdarg.h>
@@ -677,6 +686,269 @@ void plab_set_lut_folder(const char *folder)
 {
   dt_conf_set_string("plugins/darkroom/lut3d/def_path", folder);
 }
+
+// ---------------------------------------------------------------------------
+// AI denoise, following src/libs/neural_restore.c's raw path, which lives in
+// a GTK module and so cannot be called from here
+// ---------------------------------------------------------------------------
+
+#define PLAB_AI_ENABLED "plugins/ai/enabled"
+#define PLAB_RAWDENOISE "rawdenoise"
+
+#ifdef HAVE_AI
+
+int plab_ai_built(void) { return 1; }
+
+int plab_ai_enabled(void)
+{
+  return dt_conf_get_bool(PLAB_AI_ENABLED);
+}
+
+void plab_ai_set_enabled(int on)
+{
+  dt_conf_set_bool(PLAB_AI_ENABLED, on ? TRUE : FALSE);
+  dt_ai_registry_set_enabled(on ? TRUE : FALSE);
+  // creates the model folders and scans them, the first time AI goes on
+  if(on) dt_ai_models_init_lazy();
+}
+
+// the model darktable uses for raw denoise: the chosen one once a model is
+// downloaded, else the registry's default. dt_ai_models_get_active_for_task()
+// only answers after a download, so the default is looked up here. a copy,
+// for dt_ai_model_free()
+static dt_ai_model_t *_rawdenoise_model(void)
+{
+  char *id = dt_ai_models_get_active_for_task(PLAB_RAWDENOISE);
+  dt_ai_model_t *m = id && id[0] ? dt_ai_models_get_by_id(id) : NULL;
+  g_free(id);
+  for(int i = 0; !m && i < dt_ai_models_get_count(); i++)
+  {
+    dt_ai_model_t *c = dt_ai_models_get_by_index(i);
+    if(c && c->is_default && c->task && !strcmp(c->task, PLAB_RAWDENOISE))
+      m = c;
+    else
+      dt_ai_model_free(c);
+  }
+  return m;
+}
+
+int plab_ai_denoise_model_state(void)
+{
+  if(!plab_ai_enabled()) return -1;
+  dt_ai_model_t *m = _rawdenoise_model();
+  if(!m) return -1;
+  const int state = (m->status == DT_AI_MODEL_DOWNLOADED
+                     || m->status == DT_AI_MODEL_UPDATE_AVAILABLE) ? 1 : 0;
+  dt_ai_model_free(m);
+  return state;
+}
+
+typedef struct
+{
+  void (*fn)(double, void *);
+  void *user;
+} _plab_progress_t;
+
+static void _download_progress(const char *model_id, const double progress, gpointer data)
+{
+  _plab_progress_t *p = data;
+  if(p->fn) p->fn(progress, p->user);
+}
+
+char *plab_ai_download_denoise(void (*progress)(double fraction, void *user),
+                               void *user, const int *cancel)
+{
+  if(!plab_ai_enabled()) return g_strdup("AI is switched off");
+  dt_ai_model_t *m = _rawdenoise_model();
+  if(!m) return g_strdup("no raw denoise model is known to this build");
+  char *id = g_strdup(m->id);
+  dt_ai_model_free(m);
+  _plab_progress_t p = { progress, user };
+  // the registry's cancel flag is a gboolean; the caller's is an int
+  gboolean stop = FALSE;
+  char *err = dt_ai_models_download_sync(id, _download_progress, &p,
+                                         cancel ? (const gboolean *)cancel : &stop);
+  g_free(id);
+  if(!err) dt_ai_models_refresh_status();
+  return err;
+}
+
+// a free <dir>/<name>_raw-denoise.dng, or _2, _3 ... after it
+static gchar *_denoise_path(const char *src)
+{
+  gchar *dir = g_path_get_dirname(src);
+  gchar *base = g_path_get_basename(src);
+  gchar *dot = strrchr(base, '.');
+  if(dot) *dot = '\0';
+  gchar *out = g_strdup_printf("%s/%s_raw-denoise.dng", dir, base);
+  for(int n = 2; g_file_test(out, G_FILE_TEST_EXISTS); n++)
+  {
+    g_free(out);
+    out = g_strdup_printf("%s/%s_raw-denoise_%d.dng", dir, base, n);
+  }
+  g_free(dir);
+  g_free(base);
+  return out;
+}
+
+static int _denoise_bayer(dt_restore_context_t *ctx, int imgid, const dt_image_t *img,
+                          const char *src, const char *out, float strength, char **err)
+{
+  const int width = img->width, height = img->height;
+  const size_t npix = (size_t)width * height;
+  dt_mipmap_buffer_t mbuf;
+  dt_mipmap_cache_get(&mbuf, imgid, DT_MIPMAP_FULL, DT_MIPMAP_BLOCKING, 'r');
+  float *cfa_in = mbuf.buf ? g_try_malloc(npix * sizeof(float)) : NULL;
+  if(cfa_in && img->buf_dsc.datatype == TYPE_UINT16)
+  {
+    const uint16_t *in = (const uint16_t *)mbuf.buf;
+    for(size_t i = 0; i < npix; i++) cfa_in[i] = (float)in[i];
+  }
+  else if(cfa_in && img->buf_dsc.datatype == TYPE_FLOAT)
+    memcpy(cfa_in, mbuf.buf, npix * sizeof(float));
+  else
+  {
+    g_free(cfa_in);
+    cfa_in = NULL;
+  }
+  dt_mipmap_cache_release(&mbuf);
+  if(!cfa_in)
+  {
+    _seterr(err, "could not read the raw data");
+    return 1;
+  }
+
+  uint16_t *cfa_out = g_try_malloc(npix * sizeof(uint16_t));
+  int res = cfa_out ? dt_restore_raw_bayer(ctx, img, cfa_in, width, height, cfa_out,
+                                           strength, NULL)
+                    : 1;
+  g_free(cfa_in);
+  if(res == 0)
+  {
+    uint8_t *exif = NULL;
+    const int exif_len = dt_exif_read_blob(&exif, src, imgid, FALSE, width, height, TRUE);
+    res = dt_imageio_dng_write_cfa_bayer(out, cfa_out, width, height, img, exif, exif_len,
+                                         NULL);
+    g_free(exif);
+    if(res) _seterr(err, "could not write '%s'", out);
+  }
+  else
+    _seterr(err, "the denoise model failed on this image");
+  g_free(cfa_out);
+  return res;
+}
+
+static int _denoise_linear(dt_restore_context_t *ctx, int imgid, const dt_image_t *img,
+                           const char *src, const char *out, float strength, char **err)
+{
+  float *rgb = NULL;
+  int w = 0, h = 0;
+  int res = dt_restore_raw_linear(ctx, imgid, &rgb, &w, &h, strength, NULL);
+  if(res == 0 && rgb)
+  {
+    uint8_t *exif = NULL;
+    const int exif_len = dt_exif_read_blob(&exif, src, imgid, FALSE, w, h, TRUE);
+    res = dt_imageio_dng_write_linear(out, rgb, w, h, img, exif, exif_len, NULL);
+    g_free(exif);
+    if(res) _seterr(err, "could not write '%s'", out);
+  }
+  else
+  {
+    res = 1;
+    _seterr(err, "the denoise model failed on this image");
+  }
+  if(rgb) dt_free_align(rgb);
+  return res;
+}
+
+int plab_ai_denoise(int imgid, float strength, char **out_path, char **err)
+{
+  if(!plab_ai_enabled())
+  {
+    _seterr(err, "AI is switched off");
+    return -1;
+  }
+
+  // loads the raw, so buf_dsc (filters, datatype) is filled in below
+  dt_mipmap_buffer_t warm;
+  dt_mipmap_cache_get(&warm, imgid, DT_MIPMAP_FULL, DT_MIPMAP_BLOCKING, 'r');
+  const gboolean loaded = warm.buf != NULL;
+  dt_mipmap_cache_release(&warm);
+  const dt_image_t *cached = loaded ? dt_image_cache_get(imgid, 'r') : NULL;
+  if(!cached)
+  {
+    _seterr(err, "could not load the photo");
+    return -1;
+  }
+  const dt_image_t img = *cached;
+  dt_image_cache_read_release(cached);
+
+  const dt_restore_sensor_class_t cls = dt_restore_classify_sensor(&img);
+  if(cls == DT_RESTORE_SENSOR_CLASS_UNSUPPORTED)
+  {
+    _seterr(err, "AI denoise works on raw files only");
+    return -1;
+  }
+
+  dt_restore_env_t *env = dt_restore_env_init();
+  dt_restore_context_t *ctx = !env ? NULL
+    : cls == DT_RESTORE_SENSOR_CLASS_BAYER ? dt_restore_load_rawdenoise_bayer(env)
+    : cls == DT_RESTORE_SENSOR_CLASS_XTRANS ? dt_restore_load_rawdenoise_xtrans(env)
+                                            : dt_restore_load_rawdenoise_linear(env);
+  if(!ctx)
+  {
+    _seterr(err, "the raw denoise model is not downloaded");
+    dt_restore_env_destroy(env);
+    return -1;
+  }
+
+  char src[PATH_MAX] = { 0 };
+  gboolean from_cache = FALSE;
+  dt_image_full_path(imgid, src, sizeof(src), &from_cache);
+  gchar *out = _denoise_path(src);
+  strength = CLAMP(strength, 0.f, 1.f);
+  // X-Trans runs through the linear model until a dedicated one exists,
+  // as in neural_restore.c
+  const int res = cls == DT_RESTORE_SENSOR_CLASS_BAYER
+    ? _denoise_bayer(ctx, imgid, &img, src, out, strength, err)
+    : _denoise_linear(ctx, imgid, &img, src, out, strength, err);
+  dt_restore_unref(ctx);
+  dt_restore_env_destroy(env);
+
+  int newid = -1;
+  if(res == 0)
+  {
+    // keeps darktable's auto-applied denoise presets off the result
+    dt_exif_xmp_write_neural_restore(out, "raw-denoise");
+    newid = plab_import(out, err);
+    if(out_path) *out_path = g_strdup(out);
+  }
+  else
+    g_unlink(out);
+  g_free(out);
+  return newid;
+}
+
+#else
+
+int plab_ai_built(void) { return 0; }
+int plab_ai_enabled(void) { return 0; }
+void plab_ai_set_enabled(int on) {}
+int plab_ai_denoise_model_state(void) { return -1; }
+
+char *plab_ai_download_denoise(void (*progress)(double fraction, void *user),
+                               void *user, const int *cancel)
+{
+  return g_strdup("this build has no AI support");
+}
+
+int plab_ai_denoise(int imgid, float strength, char **out_path, char **err)
+{
+  _seterr(err, "this build has no AI support");
+  return -1;
+}
+
+#endif
 
 // clang-format off
 // modelines: These editor modelines have been set for all relevant files by tools/update_modelines.py

@@ -58,6 +58,13 @@ public slots:
   // options: format (jpg, tif, png, webp), quality, maxSize (long edge, 0 full),
   // naming (original, suffix, sequence), suffix, base; files never overwrite
   void exportImages(const QList<int> &ids, const QString &folder, const QVariantMap &options);
+
+  // AI: report what is possible, switch it, fetch the model, run it
+  void aiState();
+  void setAiEnabled(bool on);
+  void downloadDenoiseModel();
+  // strength 0..1; the result is a new DNG in the library, next to the raw
+  void aiDenoise(int imgid, double strength);
   void stop();
 
 signals:
@@ -78,10 +85,16 @@ signals:
   void batchDone(const QString &message);
   void exportProgress(int done, int total, const QString &file);
   void exportFinished(int done, int total, const QString &folder, const QString &error);
+  // built: compiled with AI; model: 0 to download, 1 ready, -1 unavailable
+  void aiStateReady(bool built, bool enabled, int model);
+  void aiDownloadProgress(double fraction);
+  void aiDownloadFinished(const QString &error);
+  void aiDenoised(int newId, const QString &path, const QString &error);
 
 public:
   // set from the UI thread; the export loop stops before its next photo
   void cancelExport() { m_cancelExport.storeRelaxed(1); }
+  void cancelAiDownload() { m_cancelDownload.storeRelaxed(1); }
 
 private:
   struct Record
@@ -104,6 +117,7 @@ private:
   QHash<int, Record> m_records;
   int m_imgid = -1;
   QAtomicInt m_cancelExport;
+  QAtomicInt m_cancelDownload;
   double m_asShot = 0.0;
   QString m_lutDir;
 };

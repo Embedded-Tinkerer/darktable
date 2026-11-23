@@ -122,6 +122,32 @@ void plab_toggle_color_label(int imgid, int color);
 /** darktable's cached thumbnail (RGBx byte order) at about the given size, g_malloc'd */
 uint8_t *plab_thumbnail(int imgid, int max_w, int max_h, int *out_w, int *out_h);
 
+// ---------------------------------------------------------------------------
+// AI: darktable's raw denoise (RawNIND), run locally through ONNX Runtime.
+// all of it reports "not built" when darktable was configured without USE_AI
+// ---------------------------------------------------------------------------
+
+/** 1 when this build has darktable's AI support */
+int plab_ai_built(void);
+
+/** the user's switch: AI loads nothing and finds no models while it is off */
+int plab_ai_enabled(void);
+void plab_ai_set_enabled(int on);
+
+/** the raw-denoise model: 0 not downloaded, 1 ready, -1 unavailable */
+int plab_ai_denoise_model_state(void);
+
+/** download the raw-denoise model, blocking. progress gets 0..1. returns
+    NULL on success, else a g_malloc'd message. *cancel may be set from
+    another thread to stop it */
+char *plab_ai_download_denoise(void (*progress)(double fraction, void *user),
+                               void *user, const int *cancel);
+
+/** denoise a raw before demosaicing and write the result as a DNG next to
+    it, named <name>_raw-denoise.dng; strength 0..1. the DNG is imported
+    into the library and its imgid returned, -1 on error */
+int plab_ai_denoise(int imgid, float strength, char **out_path, char **err);
+
 void plab_free(void *p);
 
 #ifdef __cplusplus
