@@ -36,6 +36,7 @@ jobs:
             libwebp-dev libjxl-dev libimath-dev libopenexr-dev zlib1g-dev \
             libpotrace-dev libarchive-dev libmarisa-dev libcolord-dev \
             libcolord-gtk-dev libcups2-dev libinih-dev libomp-dev llvm clang \
+            libonnxruntime-dev \
             qt6-base-dev qt6-declarative-dev qt6-wayland \
             qml6-module-qtquick qml6-module-qtquick-controls \
             qml6-module-qtquick-layouts qml6-module-qtquick-window \
@@ -62,29 +63,6 @@ jobs:
           git submodule update --init --depth 1 \
             src/external/rawspeed src/external/LibRaw src/external/whereami \
             src/external/OpenCL src/external/libxcf
-
-      # FindONNXRuntime.cmake's own download stops when its checksum lookup
-      # through the GitHub API fails, as it does on this runner. it looks in
-      # src/external/onnxruntime first, so the release is unpacked there,
-      # checked against the digest GitHub publishes for the asset
-      - name: Fetch ONNX Runtime
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          ver=$(sed -n 's/^set(ONNXRUNTIME_VERSION "\([^"]*\)".*/\1/p' cmake/modules/FindONNXRuntime.cmake)
-          # the pinned version may have shipped on PyPI only, without a GitHub
-          # release; ORT's C API is versioned, so a newer release also works
-          if ! gh release view "v$ver" -R microsoft/onnxruntime > /dev/null; then
-            ver=$(gh release view -R microsoft/onnxruntime --json tagName --jq '.tagName | ltrimstr("v")')
-          fi
-          echo "ONNX Runtime $ver"
-          pkg=onnxruntime-linux-x64-$ver.tgz
-          gh release download "v$ver" -R microsoft/onnxruntime -p "$pkg" -D "$RUNNER_TEMP"
-          digest=$(gh api "repos/microsoft/onnxruntime/releases/tags/v$ver" \
-            --jq ".assets[] | select(.name == \"$pkg\") | .digest")
-          echo "${digest#sha256:}  $RUNNER_TEMP/$pkg" | sha256sum -c -
-          mkdir -p src/external/onnxruntime
-          tar -xzf "$RUNNER_TEMP/$pkg" -C src/external/onnxruntime --strip-components=1
 
       - name: Build AppImage
         run: ./packaging/photographylab/build-appimage.sh
