@@ -72,6 +72,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ver=$(sed -n 's/^set(ONNXRUNTIME_VERSION "\([^"]*\)".*/\1/p' cmake/modules/FindONNXRuntime.cmake)
+          # the pinned version may have shipped on PyPI only, without a GitHub
+          # release; ORT's C API is versioned, so a newer release also works
+          if ! gh release view "v$ver" -R microsoft/onnxruntime > /dev/null; then
+            ver=$(gh release view -R microsoft/onnxruntime --json tagName --jq '.tagName | ltrimstr("v")')
+          fi
+          echo "ONNX Runtime $ver"
           pkg=onnxruntime-linux-x64-$ver.tgz
           gh release download "v$ver" -R microsoft/onnxruntime -p "$pkg" -D "$RUNNER_TEMP"
           digest=$(gh api "repos/microsoft/onnxruntime/releases/tags/v$ver" \
