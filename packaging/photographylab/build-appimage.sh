@@ -56,6 +56,16 @@ cp -a "$QT_PLUGINS/wayland-graphics-integration-client" "$APPDIR/usr/plugins/"
 PLUGINS=$APPDIR/usr/lib/$ARCH-linux-gnu/darktable
 [ -d "$PLUGINS" ] || PLUGINS=$APPDIR/usr/lib/darktable
 
+# AI Denoise loads ONNX Runtime with g_module_open(), by name or from
+# darktable's plugin folder (src/ai/backend_onnx.c:1196), so linuxdeploy
+# never sees it. a downloaded copy is installed there by cmake; a system
+# package is not, so it is copied in
+EXTRA_DEPS=()
+if [ ! -e "$PLUGINS/libonnxruntime.so" ] && [ -e "/usr/lib/$ARCH-linux-gnu/libonnxruntime.so" ]; then
+  cp -L "/usr/lib/$ARCH-linux-gnu/libonnxruntime.so" "$PLUGINS/libonnxruntime.so"
+fi
+[ -e "$PLUGINS/libonnxruntime.so" ] && EXTRA_DEPS+=(--deploy-deps-only "$PLUGINS/libonnxruntime.so")
+
 # darktable's modules are dlopen()ed, so their dependencies are listed by hand
 ./linuxdeploy-$ARCH.AppImage \
   --appdir "$APPDIR" \
@@ -66,5 +76,6 @@ PLUGINS=$APPDIR/usr/lib/$ARCH-linux-gnu/darktable
   --deploy-deps-only "$PLUGINS/plugins/imageio/format" \
   --deploy-deps-only "$PLUGINS/plugins/imageio/storage" \
   --deploy-deps-only "$APPDIR/usr/plugins/wayland-graphics-integration-client" \
+  "${EXTRA_DEPS[@]}" \
   --plugin qt \
   --output appimage
