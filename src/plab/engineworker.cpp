@@ -354,7 +354,7 @@ void EngineWorker::render(const QVariantMap &edit, int maxW, int maxH, int gener
 
   int w = 0, h = 0;
   char *err = nullptr;
-  uint8_t *buf = plab_render(m_imgid, maxW, maxH, -1, &w, &h, &err);
+  uint8_t *buf = plab_preview(m_imgid, maxW, maxH, &w, &h, &err);
   if(!buf)
   {
     emit failed(takeError(err));
@@ -620,5 +620,6 @@ void EngineWorker::aiDenoise(int imgid, double strength)
 
 void EngineWorker::stop()
 {
+  plab_preview_close();
   plab_shutdown();
 }

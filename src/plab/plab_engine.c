@@ -39,6 +39,8 @@
 #include "develop/blend.h"
 #include "develop/develop.h"
 #include "develop/imageop.h"
+#include "develop/pixelpipe_cache.h"
+#include "develop/pixelpipe_hb.h"
 #include "imageio/imageio_common.h"
 #include "imageio/imageio_module.h"
 
@@ -186,6 +188,141 @@ uint8_t *plab_render(int imgid, int max_w, int max_h, int history_end,
   *out_w = dat.width;
   *out_h = dat.height;
   return dat.buf;
+}
+
+// ---------------------------------------------------------------------------
+// live preview: dt_imageio_export_with_flags()'s pipe, minus the format
+// plumbing, kept alive between renders together with its develop object.
+// the pipe cache keys a module's output by its settings and those of every
+// module before it, and by the develop object's color profile records, so
+// both stay and only the history is read again for each render
+// ---------------------------------------------------------------------------
+
+// enough cache lines for one per module of a typical history, and then some
+#define PLAB_PREVIEW_CACHE_LINES 48
+
+static struct
+{
+  int imgid;
+  int max_w, max_h;
+  gboolean open;
+  dt_develop_t dev;
+  dt_dev_pixelpipe_t pipe;
+} _pv = { .imgid = -1 };
+
+void plab_preview_close(void)
+{
+  if(!_pv.open) return;
+  dt_dev_pixelpipe_cleanup(&_pv.pipe);
+  dt_dev_cleanup(&_pv.dev);
+  _pv.open = FALSE;
+  _pv.imgid = -1;
+}
+
+static gboolean _preview_open(int imgid, int max_w, int max_h, char **err)
+{
+  plab_preview_close();
+  // an export pipe renders exactly as plab_render() does; it only lacks a
+  // cache worth the name, so a larger one replaces its two lines. the size
+  // given only shapes those two lines, which are dropped
+  if(!dt_dev_pixelpipe_init_export(&_pv.pipe, 1, 1, IMAGEIO_RGB | IMAGEIO_INT8, FALSE))
+  {
+    _seterr(err, "could not set up the preview");
+    return FALSE;
+  }
+  dt_dev_pixelpipe_cache_cleanup(&_pv.pipe);
+  dt_dev_pixelpipe_cache_init(&_pv.pipe, PLAB_PREVIEW_CACHE_LINES, 0, 8);
+  dt_dev_pixelpipe_set_icc(&_pv.pipe, DT_COLORSPACE_SRGB, NULL, DT_INTENT_PERCEPTUAL);
+  dt_dev_init(&_pv.dev, FALSE);
+  dt_dev_load_image(&_pv.dev, imgid);
+  _pv.imgid = imgid;
+  _pv.max_w = max_w;
+  _pv.max_h = max_h;
+  _pv.open = TRUE;
+  return TRUE;
+}
+
+// the image's history as it is in the database now: back to defaults, then
+// read again, as dt_dev_load_image() did the first time
+static void _preview_reload_history(dt_develop_t *dev, int imgid)
+{
+  dt_dev_pop_history_items_ext(dev, 0);
+  g_list_free_full(dev->history, dt_dev_free_history_item);
+  dev->history = NULL;
+  dev->history_end = 0;
+  dt_dev_read_history_ext(dev, imgid, FALSE);
+  // load reads the history but does not replay it into the module params
+  dt_dev_pop_history_items_ext(dev, dev->history_end);
+}
+
+uint8_t *plab_preview(int imgid, int max_w, int max_h, int *out_w, int *out_h, char **err)
+{
+  gboolean fresh = FALSE;
+  if(!_pv.open || _pv.imgid != imgid || _pv.max_w != max_w || _pv.max_h != max_h)
+  {
+    if(!_preview_open(imgid, max_w, max_h, err)) return NULL;
+    fresh = TRUE;
+  }
+
+  dt_dev_pixelpipe_t *pipe = &_pv.pipe;
+  dt_develop_t *dev = &_pv.dev;
+  if(fresh)
+    dt_dev_pop_history_items_ext(dev, dev->history_end);
+  else
+    _preview_reload_history(dev, imgid);
+
+  // taken per render, not held: the cache keeps the image in memory, and a
+  // held read lock would stall anything that has to drop this image's mips
+  dt_mipmap_buffer_t buf;
+  dt_mipmap_cache_get(&buf, imgid, DT_MIPMAP_FULL, DT_MIPMAP_BLOCKING, 'r');
+  if(!buf.buf || buf.width < 1 || buf.height < 1)
+  {
+    dt_mipmap_cache_release(&buf);
+    _seterr(err, "could not load the image");
+    return NULL;
+  }
+  dt_dev_pixelpipe_set_input(pipe, dev, (float *)buf.buf, buf.width, buf.height, buf.iscale);
+  dt_dev_pixelpipe_cleanup_nodes(pipe);
+  dt_dev_pixelpipe_create_nodes(pipe, dev);
+  dt_dev_pixelpipe_synch_all(pipe, dev);
+  dt_dev_pixelpipe_get_dimensions(pipe, dev, pipe->iwidth, pipe->iheight,
+                                  &pipe->processed_width, &pipe->processed_height);
+
+  // fit max_w x max_h, never upscaled, as plab_render()'s export does
+  const double sx = max_w > 0 ? (double)max_w / pipe->processed_width : 1.0;
+  const double sy = max_h > 0 ? (double)max_h / pipe->processed_height : 1.0;
+  const double scale = fmin(1.0, fmin(sx, sy));
+  const int w = MAX(1, (int)floor(scale * pipe->processed_width));
+  const int h = MAX(1, (int)floor(scale * pipe->processed_height));
+
+  // not high quality: downsampling right after demosaic, as plab_render()
+  dt_dev_pixelpipe_iop_t *finalscale = NULL;
+  for(const GList *n = g_list_last(pipe->nodes); n && !finalscale; n = g_list_previous(n))
+  {
+    dt_dev_pixelpipe_iop_t *node = n->data;
+    if(dt_iop_module_is_finalscale(node->module)) finalscale = node;
+  }
+  if(finalscale) finalscale->enabled = FALSE;
+  dt_dev_pixelpipe_process_no_gamma(pipe, dev, 0, 0, w, h, scale);
+  if(finalscale) finalscale->enabled = TRUE;
+
+  uint8_t *out = NULL;
+  if(pipe->backbuf)
+  {
+    out = g_try_malloc((size_t)4 * w * h);
+    if(out)
+    {
+      const float *in = (const float *)pipe->backbuf;
+      // BGRx, as plab_render() hands back
+      for(int y = 0; y < h; y++)
+        dt_display_to_8bit_pixels(in + (size_t)4 * w * y, out + (size_t)4 * w * y, w, TRUE);
+      *out_w = w;
+      *out_h = h;
+    }
+  }
+  dt_mipmap_cache_release(&buf);
+  if(!out) _seterr(err, "render failed");
+  return out;
 }
 
 int plab_base_history(int imgid)

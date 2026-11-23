@@ -82,6 +82,15 @@ int plab_apply(int imgid, int base_end, const plab_layer_t *layers, int n_layers
 uint8_t *plab_render(int imgid, int max_w, int max_h, int history_end,
                      int *out_w, int *out_h, char **err);
 
+/** plab_render() of the whole history, through a pipe kept between calls for
+    the same image and size. its cache keys each module's output by the
+    settings of it and all before it, so after a slider moves only the
+    modules from that one on are run again. same pixels as plab_render() */
+uint8_t *plab_preview(int imgid, int max_w, int max_h, int *out_w, int *out_h, char **err);
+
+/** free the kept preview pipe, e.g. when another photo is opened */
+void plab_preview_close(void);
+
 /** apply a style after truncating history to base_end; returns the new base */
 int plab_apply_style(int imgid, int base_end, const char *name, char **err);
 
