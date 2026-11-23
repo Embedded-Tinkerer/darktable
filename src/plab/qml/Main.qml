@@ -492,8 +492,51 @@ ApplicationWindow {
                                 onMoved: (v) => lab.setValue("noise", v)
                             }
                             Text {
-                                text: "Uses darktable's profiled denoise for your camera model. AI denoise comes in a later build."
+                                text: "Uses darktable's profiled denoise for your camera model."
                                 color: Theme.textDim
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+
+                            SectionHeader { title: "AI Denoise" }
+                            Text {
+                                text: lab.aiBuilt
+                                      ? "Cleans the raw sensor data with a neural network that runs on this computer, "
+                                        + "and saves the result as a new DNG next to the original, which keeps this edit. "
+                                        + (lab.aiReady ? "" : "The first run downloads the model once. ")
+                                        + "Expect about a minute per photo."
+                                      : "This build has no AI support."
+                                color: Theme.textDim
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+                            AdjustSlider {
+                                id: aiStrength
+                                visible: lab.aiBuilt
+                                label: "Strength"
+                                from: 0; to: 100; neutral: 100; unit: " %"
+                                value: 100
+                                onMoved: (v) => value = v
+                            }
+                            Button {
+                                visible: lab.aiBuilt
+                                text: lab.aiBusy ? "Working..." : "AI Denoise"
+                                highlighted: true
+                                enabled: lab.hasImage && !lab.aiBusy
+                                Layout.fillWidth: true
+                                onClicked: lab.aiDenoise(aiStrength.value / 100)
+                            }
+                            ProgressBar {
+                                visible: lab.aiBusy
+                                from: 0; to: 1
+                                value: lab.aiProgress
+                                indeterminate: lab.aiProgress <= 0
+                                Layout.fillWidth: true
+                            }
+                            Text {
+                                visible: lab.aiBusy
+                                text: lab.aiStage
+                                color: Theme.text
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
                             }

@@ -124,6 +124,23 @@ uint8_t *plab_thumbnail(int imgid, int max_w, int max_h, int *out_w, int *out_h)
 
 void plab_free(void *p);
 
+// --- AI denoise (darktable's RawNIND models, run locally) ---
+
+/** 1 when this build has darktable's AI engine, else 0 */
+int plab_ai_built(void);
+
+/** 1 when the raw denoise model is installed, so plab_ai_denoise() can run */
+int plab_ai_model_ready(void);
+
+/** switch darktable's AI on and download the raw denoise model if it is
+    missing; progress gets 0..1. 0 on success */
+int plab_ai_prepare(void (*progress)(double fraction, void *data), void *data, char **err);
+
+/** denoise a raw into a new DNG next to it ("<name>-AI-Denoise.dng"), add it
+    to the catalog in the same group, with the source's stars and labels.
+    strength 0..1. returns the new image id, or -1 */
+int plab_ai_denoise(int imgid, float strength, char **err);
+
 #ifdef __cplusplus
 }
 #endif

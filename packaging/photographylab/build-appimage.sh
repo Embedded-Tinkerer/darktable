@@ -11,11 +11,15 @@ APPDIR=$BUILD/AppDir
 # skip the build when SKIP_BUILD=1, to repackage an existing build-plab
 if [ "${SKIP_BUILD:-0}" != 1 ]; then
   rm -rf "$BUILD"
-  # BINARY_PACKAGE_BUILD drops -march=native, so the result runs on any x86-64
+  # BINARY_PACKAGE_BUILD drops -march=native, so the result runs on any x86-64.
+  # the fork carries no release tags, so the version would be a bare commit
+  # hash; the AI model download picks its release by darktable's X.Y.Z
+  # (src/common/ai_models.c, _get_darktable_version_prefix), and this tree
+  # is darktable 5.8.0 plus PhotographyLAB
   cmake -S . -B "$BUILD" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
-    -DBINARY_PACKAGE_BUILD=1 -DUSE_PHOTOGRAPHYLAB=ON \
-    -DUSE_LUA=OFF -DUSE_MAP=OFF -DUSE_GMIC=OFF -DUSE_AI=OFF -DUSE_MCP=OFF \
+    -DBINARY_PACKAGE_BUILD=1 -DUSE_PHOTOGRAPHYLAB=ON -DPROJECT_VERSION=5.8.0 \
+    -DUSE_LUA=OFF -DUSE_MAP=OFF -DUSE_GMIC=OFF -DUSE_AI=ON -DUSE_MCP=OFF \
     -DBUILD_TESTING=OFF
   cmake --build "$BUILD"
 fi

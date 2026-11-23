@@ -19,6 +19,11 @@ cmake --build build
 build/bin/photographylab [photo]
 ```
 
+For AI Denoise add `-DUSE_AI=ON -DPROJECT_VERSION=5.8.0`. cmake downloads
+ONNX Runtime by itself. The version matters because darktable picks the AI
+model release by its own X.Y.Z, and a checkout without release tags would
+otherwise report a bare commit hash, which matches no model release.
+
 On Windows, build in the MSYS2 UCRT64 shell as for darktable, adding
 `mingw-w64-ucrt-x86_64-qt6-base` and `mingw-w64-ucrt-x86_64-qt6-declarative`.
 
@@ -33,7 +38,7 @@ locally, run that script from the source root.
 
 | file | what it does |
 |---|---|
-| `plab_engine.c/.h` | the only code that calls darktable: import, history, render to memory, styles, export |
+| `plab_engine.c/.h` | the only code that calls darktable: import, history, render to memory, styles, export, AI denoise |
 | `engineworker.*` | runs the engine on its own thread; turns slider values into module parameters |
 | `labcontroller.*` | the state QML binds to; sends one render at a time, always the newest |
 | `qml/` | the window: Library (folders, grid, batch actions) and Develop (photo, filmstrip, Basic / Looks / Detail / Optics) |

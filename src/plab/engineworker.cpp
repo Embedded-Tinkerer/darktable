@@ -575,6 +575,71 @@ void EngineWorker::exportImages(const QList<int> &ids, const QString &folder,
   emit exportFinished(done, int(ids.size()), folder, lastError);
 }
 
+void EngineWorker::checkAi()
+{
+  emit aiStatus(plab_ai_built() != 0, plab_ai_model_ready() != 0);
+}
+
+static void _downloadProgress(double fraction, void *data)
+{
+  EngineWorker *w = static_cast<EngineWorker *>(data);
+  emit w->aiProgress(EngineWorker::tr("downloading the AI denoise model..."), fraction);
+}
+
+void EngineWorker::aiDenoise(const QList<int> &ids, double strength, bool openResult)
+{
+  if(!plab_ai_model_ready())
+  {
+    emit aiProgress(tr("downloading the AI denoise model..."), 0.0);
+    char *err = nullptr;
+    const bool ok = plab_ai_prepare(&_downloadProgress, this, &err) == 0;
+    const QString msg = takeError(err);
+    checkAi();
+    if(!ok)
+    {
+      emit aiProgress(QString(), -1.0);
+      emit batchDone(msg);
+      return;
+    }
+  }
+
+  QList<int> made;
+  QString lastError;
+  const int total = int(ids.size());
+  for(int i = 0; i < total; i++)
+  {
+    emit aiProgress(total == 1 ? tr("AI denoise running...")
+                               : tr("AI denoise: photo %1 of %2...").arg(i + 1).arg(total),
+                    double(i) / total);
+    char *err = nullptr;
+    const int nid = plab_ai_denoise(ids[i], float(strength), &err);
+    if(nid < 0)
+    {
+      lastError = takeError(err);
+      continue;
+    }
+    plab_free(err);
+    // the DNG starts with the source's look; profiled denoise on top of
+    // AI denoise would only soften it further
+    const Record src = _record(ids[i]);
+    QVariantMap edit = src.edit;
+    QVariantMap adjust = edit.value(QStringLiteral("adjust")).toMap();
+    adjust.insert(QStringLiteral("noise"), 0.0);
+    edit.insert(QStringLiteral("adjust"), adjust);
+    Record &rec = _record(nid);
+    if(!src.style.isEmpty()) _applyStyle(nid, rec, src.style);
+    if(!src.edit.isEmpty()) _commit(nid, rec, edit, &lastError);
+    made << nid;
+  }
+  _saveStore();
+  emit aiProgress(QString(), -1.0);
+  emit imagesChanged(made);
+  QString msg = tr("AI denoise made %n DNG(s)", nullptr, int(made.size()));
+  if(made.size() < total) msg += QStringLiteral(", ") + lastError;
+  emit batchDone(msg);
+  if(openResult && made.size() == 1) openId(made.first());
+}
+
 void EngineWorker::stop()
 {
   plab_shutdown();

@@ -84,6 +84,12 @@ class LabController : public QObject
   Q_PROPERTY(QVariantMap thumbVersions READ thumbVersions NOTIFY thumbsChanged)
   Q_PROPERTY(bool hasCopiedEdit READ hasCopiedEdit NOTIFY copiedEditChanged)
   Q_PROPERTY(bool exporting READ exporting NOTIFY exportChanged)
+  // AI denoise: built into this app, model installed, and a run's progress
+  Q_PROPERTY(bool aiBuilt READ aiBuilt NOTIFY aiChanged)
+  Q_PROPERTY(bool aiReady READ aiReady NOTIFY aiChanged)
+  Q_PROPERTY(bool aiBusy READ aiBusy NOTIFY aiChanged)
+  Q_PROPERTY(QString aiStage READ aiStage NOTIFY aiChanged)
+  Q_PROPERTY(double aiProgress READ aiProgress NOTIFY aiChanged)
   Q_PROPERTY(int exportDone READ exportDone NOTIFY exportChanged)
   Q_PROPERTY(int exportTotal READ exportTotal NOTIFY exportChanged)
   Q_PROPERTY(QString exportFile READ exportFile NOTIFY exportChanged)
@@ -107,6 +113,11 @@ public:
   QVariantList luts() const { return m_luts; }
   QStringList lutCollection() const;
   bool exporting() const { return m_exportTotal > 0; }
+  bool aiBuilt() const { return m_aiBuilt; }
+  bool aiReady() const { return m_aiReady; }
+  bool aiBusy() const { return !m_aiStage.isEmpty(); }
+  QString aiStage() const { return m_aiStage; }
+  double aiProgress() const { return m_aiProgress; }
   int exportDone() const { return m_exportDone; }
   int exportTotal() const { return m_exportTotal; }
   QString exportFile() const { return m_exportFile; }
@@ -146,6 +157,9 @@ public:
   Q_INVOKABLE void pasteEditToSelected();
   // options: see EngineWorker::exportImages()
   Q_INVOKABLE void exportSelected(const QUrl &folder, const QVariantMap &options);
+  // strength 0..1; the photo in Develop, or every selected one in Library
+  Q_INVOKABLE void aiDenoise(double strength);
+  Q_INVOKABLE void aiDenoiseSelected(double strength);
   Q_INVOKABLE void cancelExport();
   Q_INVOKABLE void openImage(int imgid);
   Q_INVOKABLE void openNeighbour(int step);
@@ -187,6 +201,7 @@ signals:
   void selectionChanged();
   void thumbsChanged();
   void copiedEditChanged();
+  void aiChanged();
 
   // to the engine thread
   void requestOpen(const QString &path);
@@ -204,6 +219,7 @@ signals:
   void requestAddLuts(const QList<int> &ids, const QVariantList &luts);
   void requestStyleImages(const QList<int> &ids, const QString &style);
   void requestPaste(const QList<int> &ids, const QVariantMap &edit, const QString &style);
+  void requestAiDenoise(const QList<int> &ids, double strength, bool openResult);
   void requestExportImages(const QList<int> &ids, const QString &folder, const QVariantMap &options);
 
 private:
@@ -235,6 +251,10 @@ private:
   int m_viewW = 1600, m_viewH = 1200;
   bool m_original = false;
   bool m_inFlight = false;
+  bool m_aiBuilt = false;
+  bool m_aiReady = false;
+  QString m_aiStage;
+  double m_aiProgress = 0.0;
   bool m_dirty = false;    // a render was asked for while one was running
   int m_generation = 0;
   int m_shown = 0;

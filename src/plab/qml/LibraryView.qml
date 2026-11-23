@@ -311,6 +311,14 @@ Item {
                                                         : "copy an edit in Develop first"
                     }
                     Button {
+                        visible: lab.aiBuilt
+                        text: lab.aiBusy ? "AI Denoise..." : "AI Denoise"
+                        enabled: !lab.aiBusy
+                        onClicked: lab.aiDenoiseSelected(1.0)
+                        ToolTip.visible: hovered
+                        ToolTip.text: "make a denoised DNG of each selected raw, next to the original"
+                    }
+                    Button {
                         text: "Export..."
                         enabled: !lab.exporting
                         onClicked: exportPopup.open()

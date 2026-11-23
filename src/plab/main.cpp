@@ -137,6 +137,8 @@ int main(int argc, char *argv[])
           lab.addLut(QUrl::fromLocalFile(val));
         else if(key == QLatin1String("style"))
           lab.applyStyle(val);
+        else if(key == QLatin1String("ai"))
+          lab.aiDenoise(val.toDouble());
         else
           lab.setValue(key, val == QLatin1String("false") ? QVariant(false)
                                                           : QVariant(val.toDouble()));
@@ -155,9 +157,19 @@ int main(int argc, char *argv[])
       });
     };
     if(!files.isEmpty())
+    {
       QObject::connect(&lab, &LabController::previewChanged, &lab, [shoot, &lab] {
         if(!lab.busy()) shoot(800);
       });
+      // a long job (AI denoise) can end after the last preview arrived
+      QObject::connect(&lab, &LabController::messageChanged, &lab, [shoot, &lab] {
+        if(!lab.busy() && lab.hasImage() && !lab.aiBusy())
+        {
+          fprintf(stderr, "photographylab: %s\n", qPrintable(lab.message()));
+          shoot(800);
+        }
+      });
+    }
     else
     {
       // the library: once the grid is filled, give the thumbnails time to load
