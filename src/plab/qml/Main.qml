@@ -609,7 +609,16 @@ ApplicationWindow {
     FileDialog {
         id: openDialog
         title: "Open a photo"
-        nameFilters: ["Photos (*.cr2 *.cr3 *.nef *.arw *.raf *.orf *.rw2 *.dng *.pef *.srw *.jpg *.jpeg *.tif *.tiff *.png *.heic *.avif)", "All files (*)"]
+        // Qt's own dialog matches names case-sensitively, and cameras write
+        // DSC01234.ARW as often as dsc01234.arw: every pattern goes in both cases
+        readonly property var photoExtensions: [
+            "3fr", "arw", "cr2", "cr3", "crw", "dcr", "dng", "erf", "iiq", "kdc", "mef",
+            "mos", "mrw", "nef", "nrw", "orf", "pef", "raf", "raw", "rw2", "rwl", "sr2",
+            "srf", "srw", "x3f",
+            "jpg", "jpeg", "tif", "tiff", "png", "heic", "heif", "avif", "jxl", "webp", "exr", "jp2"
+        ]
+        nameFilters: ["Photos (" + photoExtensions.map(e => "*." + e + " *." + e.toUpperCase()).join(" ") + ")",
+                      "All files (*)"]
         onAccepted: lab.openFile(selectedFile)
     }
     // the dialog's name field exists only once it is shown, a moment after open()
