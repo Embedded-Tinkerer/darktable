@@ -100,7 +100,7 @@ public:
                 QObject *parent = nullptr);
   ~LabController() override;
 
-  void start(const QStringList &coreArgs, const QString &stylesDir,
+  void start(const QStringList &coreArgs, const QString &bundledLutDir,
              const QString &lutDir, const QString &dataDir);
 
   bool ready() const { return m_ready; }

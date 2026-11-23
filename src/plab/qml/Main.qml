@@ -59,7 +59,7 @@ ApplicationWindow {
                 visible: lab.mode === "develop"
                 onClicked: lab.copyEdit()
                 ToolTip.visible: hovered
-                ToolTip.text: "copy this photo's sliders, LUTs and style, to paste onto others in the Library"
+                ToolTip.text: "copy this photo's sliders and LUTs, to paste onto others in the Library"
             }
             ToolButton {
                 text: "Before"
@@ -443,33 +443,21 @@ ApplicationWindow {
                                 }
                             }
 
-                            SectionHeader { title: "Styles" }
+                            // looks are LUTs now; a photo edited before that can still
+                            // carry a darktable style, so it can at least be taken off
                             RowLayout {
+                                visible: lab.currentStyle !== ""
                                 Layout.fillWidth: true
-                                TextField {
-                                    id: styleFilter
-                                    placeholderText: "search styles"
+                                Text {
+                                    text: "Older style on this photo: " + lab.currentStyle.replace(/^.*\|/, "")
+                                    color: Theme.textDim
+                                    elide: Text.ElideRight
                                     Layout.fillWidth: true
                                 }
-                                ToolButton {
-                                    text: "Import"
-                                    onClicked: styleDialog.open()
-                                }
-                            }
-                            Flow {
-                                Layout.fillWidth: true
-                                spacing: 6
-                                Repeater {
-                                    model: [""].concat(lab.styles.filter(s => s.toLowerCase().indexOf(styleFilter.text.toLowerCase()) >= 0))
-                                    delegate: Button {
-                                        required property string modelData
-                                        text: modelData === "" ? "none" : modelData.replace(/^.*\|/, "")
-                                        checkable: true
-                                        checked: lab.currentStyle === modelData
-                                        highlighted: checked
-                                        font.capitalization: Font.MixedCase
-                                        onClicked: lab.applyStyle(modelData)
-                                    }
+                                Button {
+                                    text: "Remove"
+                                    flat: true
+                                    onClicked: lab.applyStyle("")
                                 }
                             }
                             Item { implicitHeight: 12 }
@@ -603,12 +591,5 @@ ApplicationWindow {
         id: lutFolderDialog
         title: "Import every LUT in a folder"
         onAccepted: lab.importLuts([selectedFolder])
-    }
-    FileDialog {
-        id: styleDialog
-        title: "Import darktable styles"
-        nameFilters: ["darktable styles (*.dtstyle)"]
-        fileMode: FileDialog.OpenFiles
-        onAccepted: selectedFiles.forEach(f => lab.importStyles(f))
     }
 }

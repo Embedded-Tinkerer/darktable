@@ -78,8 +78,8 @@ int main(int argc, char *argv[])
   QDir().mkpath(cache);
   QDir().mkpath(data);
 
-  const QString styles = QDir(QCoreApplication::applicationDirPath())
-                           .filePath(QStringLiteral("../share/photographylab/styles"));
+  const QString bundledLuts = QDir(QCoreApplication::applicationDirPath())
+                                .filePath(QStringLiteral("../share/photographylab/luts"));
   const QStringList core = {
     QStringLiteral("--configdir"), config,
     QStringLiteral("--cachedir"), cache,
@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
     if(wh.size() == 2) window->resize(wh[0].toInt(), wh[1].toInt());
   }
 
-  lab.start(core, QDir::cleanPath(styles), QDir(data).filePath(QStringLiteral("luts")), data);
+  lab.start(core, QDir::cleanPath(bundledLuts), QDir(data).filePath(QStringLiteral("luts")), data);
 
   if(cli.isSet(importOpt))
   {

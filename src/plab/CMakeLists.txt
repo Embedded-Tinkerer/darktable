@@ -70,9 +70,10 @@ install(FILES icons/photographylab-256.png
         RENAME photographylab.png
         COMPONENT DTApplication)
 
-file(GLOB PLAB_STYLES ${CMAKE_CURRENT_SOURCE_DIR}/styles/*.dtstyle)
-install(FILES ${PLAB_STYLES}
-        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/photographylab/styles
+# the bundled looks, copied into the user's LUT collection on first start
+file(GLOB PLAB_LUTS ${CMAKE_CURRENT_SOURCE_DIR}/luts/*.cube)
+install(FILES ${PLAB_LUTS}
+        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/photographylab/luts
         COMPONENT DTApplication)
 # copied into the build tree too, so the app finds them when run from there
-file(COPY ${PLAB_STYLES} DESTINATION ${CMAKE_BINARY_DIR}/share/photographylab/styles)
+file(COPY ${PLAB_LUTS} DESTINATION ${CMAKE_BINARY_DIR}/share/photographylab/luts)

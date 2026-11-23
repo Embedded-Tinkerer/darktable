@@ -299,15 +299,11 @@ Item {
                         onClicked: { lutPopup.picked = []; lutPopup.open() }
                     }
                     Button {
-                        text: "Style..."
-                        onClicked: stylePopup.open()
-                    }
-                    Button {
                         text: "Paste edit"
                         enabled: lab.hasCopiedEdit
                         onClicked: lab.pasteEditToSelected()
                         ToolTip.visible: hovered
-                        ToolTip.text: lab.hasCopiedEdit ? "paste the copied sliders, LUTs and style (Ctrl+V)"
+                        ToolTip.text: lab.hasCopiedEdit ? "paste the copied sliders and LUTs (Ctrl+V)"
                                                         : "copy an edit in Develop first"
                     }
                     Button {
@@ -323,40 +319,6 @@ Item {
                         enabled: !lab.exporting
                         onClicked: exportPopup.open()
                     }
-                }
-            }
-        }
-    }
-
-    Popup {
-        id: stylePopup
-        anchors.centerIn: parent
-        width: Math.min(root.width - 32, 520)
-        height: Math.min(root.height - 32, 560)
-        modal: true
-        ColumnLayout {
-            anchors.fill: parent
-            Text {
-                text: "Apply a style to " + root.selectedCount + " photos"
-                color: Theme.text
-                font.pixelSize: 16
-            }
-            TextField {
-                id: styleSearch
-                placeholderText: "search styles"
-                Layout.fillWidth: true
-            }
-            ListView {
-                id: styleList
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                clip: true
-                model: [""].concat(lab.styles.filter(s => s.toLowerCase().indexOf(styleSearch.text.toLowerCase()) >= 0))
-                delegate: ItemDelegate {
-                    required property string modelData
-                    width: styleList.width
-                    text: modelData === "" ? "none (remove style)" : modelData.replace(/^.*\|/, "")
-                    onClicked: { lab.styleSelected(modelData); stylePopup.close() }
                 }
             }
         }

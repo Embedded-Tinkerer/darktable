@@ -265,19 +265,29 @@ LabController::~LabController()
   m_thread.wait();
 }
 
-void LabController::start(const QStringList &coreArgs, const QString &stylesDir,
+static const QStringList kLutPatterns = { QStringLiteral("*.cube"), QStringLiteral("*.3dl"),
+                                          QStringLiteral("*.png") };
+
+void LabController::start(const QStringList &coreArgs, const QString &bundledLutDir,
                           const QString &lutDir, const QString &dataDir)
 {
   m_lutDir = lutDir;
-  emit lutCollectionChanged();
-  // the bundled styles go into the library once; after that they are the
-  // user's to rename or delete
+  // the bundled looks go into the collection once; after that they are the
+  // user's to delete, and a deleted one does not come back
   QSettings settings(QDir(dataDir).filePath(QStringLiteral("photographylab.ini")),
                      QSettings::IniFormat);
-  const bool first = !settings.value(QStringLiteral("stylesImported")).toBool();
-  settings.setValue(QStringLiteral("stylesImported"), true);
+  if(!settings.value(QStringLiteral("lutsSeeded")).toBool())
+  {
+    QDir().mkpath(lutDir);
+    const QDir from(bundledLutDir);
+    for(const QString &f : from.entryList(kLutPatterns, QDir::Files))
+      if(!QFileInfo::exists(QDir(lutDir).filePath(f)))
+        QFile::copy(from.filePath(f), QDir(lutDir).filePath(f));
+    settings.setValue(QStringLiteral("lutsSeeded"), true);
+  }
+  emit lutCollectionChanged();
   QMetaObject::invokeMethod(m_worker, [=, w = m_worker] {
-    w->start(coreArgs, stylesDir, lutDir, first);
+    w->start(coreArgs, QString(), lutDir, false);
   });
 }
 
@@ -583,8 +593,7 @@ QString LabController::copyLut(const QUrl &url)
   return fi.fileName();
 }
 
-static const QStringList kLutPatterns = { QStringLiteral("*.cube"), QStringLiteral("*.3dl"),
-                                          QStringLiteral("*.png") };
+
 
 QStringList LabController::lutCollection() const
 {

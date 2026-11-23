@@ -42,7 +42,7 @@ locally, run that script from the source root.
 | `engineworker.*` | runs the engine on its own thread; turns slider values into module parameters |
 | `labcontroller.*` | the state QML binds to; sends one render at a time, always the newest |
 | `qml/` | the window: Library (folders, grid, batch actions) and Develop (photo, filmstrip, Basic / Looks / Detail / Optics) |
-| `styles/` | the bundled `custom|...` styles, imported into the library on first start |
+| `luts/` | the bundled looks (.cube), copied into the LUT collection on first start |
 
 Edits are ordinary darktable history on top of what darktable applies by
 itself, so an image edited here opens in darktable with the same look, and
