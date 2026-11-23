@@ -63,11 +63,24 @@ jobs:
             src/external/rawspeed src/external/LibRaw src/external/whereami \
             src/external/OpenCL src/external/libxcf
 
-      - name: Build AppImage
+      # FindONNXRuntime.cmake's own download stops when its checksum lookup
+      # through the GitHub API fails, as it does on this runner. it looks in
+      # src/external/onnxruntime first, so the release is unpacked there,
+      # checked against the digest GitHub publishes for the asset
+      - name: Fetch ONNX Runtime
         env:
-          # FindONNXRuntime.cmake reads the ONNX Runtime checksum from the
-          # GitHub API, which refuses unauthenticated calls from shared runners
-          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver=$(sed -n 's/^set(ONNXRUNTIME_VERSION "\([^"]*\)".*/\1/p' cmake/modules/FindONNXRuntime.cmake)
+          pkg=onnxruntime-linux-x64-$ver.tgz
+          gh release download "v$ver" -R microsoft/onnxruntime -p "$pkg" -D "$RUNNER_TEMP"
+          digest=$(gh api "repos/microsoft/onnxruntime/releases/tags/v$ver" \
+            --jq ".assets[] | select(.name == \"$pkg\") | .digest")
+          echo "${digest#sha256:}  $RUNNER_TEMP/$pkg" | sha256sum -c -
+          mkdir -p src/external/onnxruntime
+          tar -xzf "$RUNNER_TEMP/$pkg" -C src/external/onnxruntime --strip-components=1
+
+      - name: Build AppImage
         run: ./packaging/photographylab/build-appimage.sh
 
       - name: Publish prerelease
