@@ -63,21 +63,30 @@ jobs:
             src/external/rawspeed src/external/LibRaw src/external/whereami \
             src/external/OpenCL src/external/libxcf
 
-      # the runner's token gets "release not found" from the GitHub API for
-      # microsoft/onnxruntime, which stops FindONNXRuntime.cmake's download
-      # (it fetches a checksum there first), and Ubuntu 24.04 has no
-      # libonnxruntime-dev, so the archive is fetched by its plain download
-      # URL; the find module looks in src/external/onnxruntime first
+      # ONNX Runtime 1.24.4, the version FindONNXRuntime.cmake pins, has no
+      # GitHub release to download, and Ubuntu 24.04 has no package for it.
+      # the NuGet package carries the Linux library and the headers; it is
+      # checked against the hash NuGet publishes and unpacked where the find
+      # module looks first
       - name: Fetch ONNX Runtime
         run: |
           ver=$(sed -n 's/^set(ONNXRUNTIME_VERSION "\([^"]*\)".*/\1/p' cmake/modules/FindONNXRuntime.cmake)
-          pkg=onnxruntime-linux-x64-$ver.tgz
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$pkg" \
-            "https://github.com/microsoft/onnxruntime/releases/download/v$ver/$pkg"
-          sha256sum "$RUNNER_TEMP/$pkg"
-          mkdir -p src/external/onnxruntime
-          tar -xzf "$RUNNER_TEMP/$pkg" -C src/external/onnxruntime --strip-components=1
-          ls src/external/onnxruntime/lib
+          id=microsoft.ml.onnxruntime
+          nupkg=$RUNNER_TEMP/$id.$ver.nupkg
+          curl -fsSL --retry 3 -o "$nupkg" \
+            "https://api.nuget.org/v3-flatcontainer/$id/$ver/$id.$ver.nupkg"
+          entry=$(curl -fsSL "https://api.nuget.org/v3/registration5-semver1/$id/$ver.json" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["catalogEntry"])')
+          want=$(curl -fsSL "$entry" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["packageHash"])')
+          have=$(openssl dgst -sha512 -binary "$nupkg" | base64 -w0)
+          [ "$want" = "$have" ] || { echo "checksum mismatch for $nupkg"; exit 1; }
+          ort=src/external/onnxruntime
+          rm -rf "$RUNNER_TEMP/ort" && mkdir -p "$RUNNER_TEMP/ort" "$ort/include" "$ort/lib"
+          unzip -q "$nupkg" 'build/native/include/*' 'runtimes/linux-x64/native/*' -d "$RUNNER_TEMP/ort"
+          cp "$RUNNER_TEMP"/ort/build/native/include/* "$ort/include/"
+          cp "$RUNNER_TEMP"/ort/runtimes/linux-x64/native/* "$ort/lib/"
+          ls "$ort/lib"
 
       - name: Build AppImage
         run: ./packaging/photographylab/build-appimage.sh
