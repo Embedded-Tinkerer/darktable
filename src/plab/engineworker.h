@@ -58,10 +58,6 @@ public slots:
   // options: format (jpg, tif, png, webp), quality, maxSize (long edge, 0 full),
   // naming (original, suffix, sequence), suffix, base; files never overwrite
   void exportImages(const QList<int> &ids, const QString &folder, const QVariantMap &options);
-  // AI denoise: makes a denoised DNG of each raw and gives it the source's
-  // edit; downloads the model first if needed
-  void checkAi();
-  void aiDenoise(const QList<int> &ids, double strength, bool openResult);
   void stop();
 
 signals:
@@ -80,9 +76,6 @@ signals:
   // images whose look or labels changed, so their thumbnails reload
   void imagesChanged(const QList<int> &ids);
   void batchDone(const QString &message);
-  void aiStatus(bool built, bool ready);
-  // fraction < 0 when the run is over
-  void aiProgress(const QString &stage, double fraction);
   void exportProgress(int done, int total, const QString &file);
   void exportFinished(int done, int total, const QString &folder, const QString &error);
 

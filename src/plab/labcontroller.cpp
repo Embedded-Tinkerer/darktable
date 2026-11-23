@@ -115,18 +115,6 @@ LabController::LabController(PreviewProvider *provider, ThumbnailProvider *thumb
   connect(this, &LabController::requestStyleImages, m_worker, &EngineWorker::styleImages);
   connect(this, &LabController::requestPaste, m_worker, &EngineWorker::pasteEdit);
   connect(this, &LabController::requestExportImages, m_worker, &EngineWorker::exportImages);
-  connect(this, &LabController::requestAiDenoise, m_worker, &EngineWorker::aiDenoise);
-  connect(m_worker, &EngineWorker::aiStatus, this, [this](bool built, bool ready) {
-    m_aiBuilt = built;
-    m_aiReady = ready;
-    emit aiChanged();
-  });
-  connect(m_worker, &EngineWorker::aiProgress, this, [this](const QString &stage, double f) {
-    m_aiStage = f < 0.0 ? QString() : stage;
-    m_aiProgress = qMax(f, 0.0);
-    emit aiChanged();
-    if(!stage.isEmpty()) setMessage(stage);
-  });
 
   connect(m_worker, &EngineWorker::foldersListed, this, [this](const QVariantList &f) {
     m_folders = f;
@@ -191,7 +179,6 @@ LabController::LabController(PreviewProvider *provider, ThumbnailProvider *thumb
     m_styles = styles;
     if(ok)
     {
-      QMetaObject::invokeMethod(m_worker, &EngineWorker::checkAi);
       emit requestFolders();
       refreshImages();
     }
@@ -695,20 +682,6 @@ void LabController::pasteEditToSelected()
   setInFlight(true);
   setMessage(tr("pasting to %n photo(s)...", nullptr, int(m_selected.size())));
   emit requestPaste(m_selected, m_copied, m_copiedStyle);
-}
-
-void LabController::aiDenoise(double strength)
-{
-  if(m_imgid < 0 || aiBusy()) return;
-  setInFlight(true);
-  emit requestAiDenoise({ m_imgid }, strength, true);
-}
-
-void LabController::aiDenoiseSelected(double strength)
-{
-  if(m_selected.isEmpty() || aiBusy()) return;
-  setInFlight(true);
-  emit requestAiDenoise(m_selected, strength, false);
 }
 
 void LabController::exportSelected(const QUrl &folder, const QVariantMap &options)
