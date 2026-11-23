@@ -64,6 +64,10 @@ jobs:
             src/external/OpenCL src/external/libxcf
 
       - name: Build AppImage
+        env:
+          # FindONNXRuntime.cmake reads the ONNX Runtime checksum from the
+          # GitHub API, which refuses unauthenticated calls from shared runners
+          GITHUB_TOKEN: ${{ github.token }}
         run: ./packaging/photographylab/build-appimage.sh
 
       - name: Publish prerelease
