@@ -46,6 +46,16 @@ jobs:
         run: sudo lensfun-update-data || true
 
       - uses: actions/checkout@v4
+        with:
+          # the version comes from git describe: AI model downloads are matched
+          # to darktable's release number, and a bare hash matches none
+          fetch-depth: 0
+
+      - name: Fetch darktable release tags
+        run: |
+          git fetch --no-tags https://github.com/darktable-org/darktable.git \
+            '+refs/tags/release-*:refs/tags/release-*' || true
+          ./tools/get_git_version_string.sh
 
       - name: Fetch submodules
         run: |

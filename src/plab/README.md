@@ -53,3 +53,18 @@ QT_QPA_PLATFORM=offscreen build/bin/photographylab --size 1440x900 \
   --set exposure=0.5 --set lut=/path/look.cube --screenshot shot.png photo.raw
 build/bin/photographylab --export out.jpg photo.raw
 ```
+
+## AI denoise
+
+With `-DUSE_AI=ON` the Detail tab offers darktable's raw denoise (RawNIND),
+run on this computer through ONNX Runtime. It is off until switched on
+there; the model is downloaded once from darktable's model repository,
+which matches models to darktable's release number, so builds need the
+`release-*` tags for `git describe` (the AppImage workflow fetches them).
+Denoising writes `<name>_raw-denoise.dng` next to the raw, imports it and
+opens it. For checking without a screen:
+
+```sh
+PLAB_AI_DENOISE=1 QT_QPA_PLATFORM=offscreen build/bin/photographylab \
+  --tab 2 --screenshot ai.png photo.dng
+```

@@ -492,7 +492,80 @@ ApplicationWindow {
                                 onMoved: (v) => lab.setValue("noise", v)
                             }
                             Text {
-                                text: "Uses darktable's profiled denoise for your camera model. AI denoise comes in a later build."
+                                text: "Uses darktable's profiled denoise for your camera model."
+                                color: Theme.textDim
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+
+                            SectionHeader { title: "AI denoise" }
+                            Text {
+                                text: !lab.aiBuilt
+                                      ? "This build has no AI support."
+                                      : "Cleans up noise in raw files with a neural network running on this computer; nothing is uploaded. "
+                                        + "The result is a new DNG next to the raw (name_raw-denoise.dng), which opens here to keep editing."
+                                color: Theme.textDim
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+                            Switch {
+                                visible: lab.aiBuilt
+                                text: "Enable AI features"
+                                checked: lab.aiEnabled
+                                onToggled: lab.setAiEnabled(checked)
+                                Layout.fillWidth: true
+                            }
+                            RowLayout {
+                                visible: lab.aiBuilt && lab.aiEnabled && lab.aiModel === 0
+                                Layout.fillWidth: true
+                                Button {
+                                    visible: lab.aiDownload < 0
+                                    text: "Download the denoise model"
+                                    highlighted: true
+                                    onClicked: lab.downloadAiModel()
+                                }
+                                ProgressBar {
+                                    visible: lab.aiDownload >= 0
+                                    from: 0; to: 1
+                                    value: lab.aiDownload
+                                    Layout.fillWidth: true
+                                }
+                                Button {
+                                    visible: lab.aiDownload >= 0
+                                    text: "Cancel"
+                                    flat: true
+                                    onClicked: lab.cancelAiDownload()
+                                }
+                            }
+                            ColumnLayout {
+                                visible: lab.aiBuilt && lab.aiEnabled && lab.aiModel === 1
+                                Layout.fillWidth: true
+                                spacing: 4
+                                AdjustSlider {
+                                    id: aiStrength
+                                    label: "Strength"
+                                    from: 0; to: 100; neutral: 100; unit: " %"
+                                    value: 100
+                                    onMoved: (v) => value = v
+                                }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Button {
+                                        text: lab.aiDenoising ? "Denoising..." : "AI Denoise"
+                                        highlighted: true
+                                        enabled: lab.hasImage && !lab.aiDenoising
+                                        onClicked: lab.aiDenoise(aiStrength.value)
+                                    }
+                                    BusyIndicator {
+                                        running: lab.aiDenoising
+                                        visible: running
+                                        implicitWidth: 32; implicitHeight: 32
+                                    }
+                                }
+                            }
+                            Text {
+                                visible: lab.aiBuilt && lab.aiEnabled && lab.aiModel < 0
+                                text: "No AI denoise model is known to this build."
                                 color: Theme.textDim
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true

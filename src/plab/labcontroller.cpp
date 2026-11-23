@@ -115,6 +115,39 @@ LabController::LabController(PreviewProvider *provider, ThumbnailProvider *thumb
   connect(this, &LabController::requestStyleImages, m_worker, &EngineWorker::styleImages);
   connect(this, &LabController::requestPaste, m_worker, &EngineWorker::pasteEdit);
   connect(this, &LabController::requestExportImages, m_worker, &EngineWorker::exportImages);
+  connect(this, &LabController::requestAiState, m_worker, &EngineWorker::aiState);
+  connect(this, &LabController::requestAiEnabled, m_worker, &EngineWorker::setAiEnabled);
+  connect(this, &LabController::requestAiDownload, m_worker, &EngineWorker::downloadDenoiseModel);
+  connect(this, &LabController::requestAiDenoise, m_worker, &EngineWorker::aiDenoise);
+  connect(m_worker, &EngineWorker::aiStateReady, this, [this](bool built, bool enabled, int model) {
+    m_aiBuilt = built;
+    m_aiEnabled = enabled;
+    m_aiModel = model;
+    emit aiChanged();
+  });
+  connect(m_worker, &EngineWorker::aiDownloadProgress, this, [this](double f) {
+    m_aiDownload = qBound(0.0, f, 1.0);
+    emit aiChanged();
+  });
+  connect(m_worker, &EngineWorker::aiDownloadFinished, this, [this](const QString &error) {
+    m_aiDownload = -1.0;
+    emit aiChanged();
+    setMessage(error.isEmpty() ? tr("AI denoise model ready") : error);
+  });
+  connect(m_worker, &EngineWorker::aiDenoised, this,
+          [this](int newId, const QString &path, const QString &error) {
+    m_aiDenoising = false;
+    emit aiChanged();
+    setInFlight(false);
+    if(newId < 0)
+    {
+      setMessage(error.isEmpty() ? tr("AI denoise failed") : error);
+      return;
+    }
+    setMessage(tr("denoised into %1").arg(QFileInfo(path).fileName()));
+    refreshImages();
+    openImage(newId);
+  });
 
   connect(m_worker, &EngineWorker::foldersListed, this, [this](const QVariantList &f) {
     m_folders = f;
@@ -181,6 +214,7 @@ LabController::LabController(PreviewProvider *provider, ThumbnailProvider *thumb
     {
       emit requestFolders();
       refreshImages();
+      emit requestAiState();
     }
     emit stylesChanged();
     emit readyChanged();
@@ -691,6 +725,35 @@ void LabController::cancelExport()
 {
   // straight to the worker: its queue is busy with the export itself
   m_worker->cancelExport();
+}
+
+void LabController::setAiEnabled(bool on)
+{
+  emit requestAiEnabled(on);
+}
+
+void LabController::downloadAiModel()
+{
+  if(m_aiDownload >= 0.0) return;
+  m_aiDownload = 0.0;
+  emit aiChanged();
+  emit requestAiDownload();
+}
+
+void LabController::cancelAiDownload()
+{
+  // straight to the worker: its queue is busy with the download itself
+  m_worker->cancelAiDownload();
+}
+
+void LabController::aiDenoise(double strength)
+{
+  if(m_imgid < 0 || m_aiDenoising) return;
+  m_aiDenoising = true;
+  emit aiChanged();
+  setInFlight(true);
+  setMessage(tr("AI denoise running, this takes a while..."));
+  emit requestAiDenoise(m_imgid, qBound(0.0, strength / 100.0, 1.0));
 }
 
 void LabController::openImage(int imgid)

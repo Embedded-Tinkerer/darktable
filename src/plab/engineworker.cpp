@@ -575,6 +575,49 @@ void EngineWorker::exportImages(const QList<int> &ids, const QString &folder,
   emit exportFinished(done, int(ids.size()), folder, lastError);
 }
 
+void EngineWorker::aiState()
+{
+  emit aiStateReady(plab_ai_built() != 0, plab_ai_enabled() != 0,
+                    plab_ai_denoise_model_state());
+}
+
+void EngineWorker::setAiEnabled(bool on)
+{
+  plab_ai_set_enabled(on ? 1 : 0);
+  aiState();
+}
+
+void EngineWorker::downloadDenoiseModel()
+{
+  m_cancelDownload.storeRelaxed(0);
+  // the download polls a plain int; the progress callback, which runs on
+  // this thread inside the blocking download, copies the atomic into it
+  int cancel = 0;
+  struct Poll
+  {
+    EngineWorker *w;
+    int *flag;
+  } poll{ this, &cancel };
+  auto relay = [](double fraction, void *data) {
+    auto *p = static_cast<Poll *>(data);
+    *p->flag = p->w->m_cancelDownload.loadRelaxed();
+    emit p->w->aiDownloadProgress(fraction);
+  };
+  char *err = plab_ai_download_denoise(relay, &poll, &cancel);
+  emit aiDownloadFinished(takeError(err));
+  aiState();
+}
+
+void EngineWorker::aiDenoise(int imgid, double strength)
+{
+  char *path = nullptr;
+  char *err = nullptr;
+  const int id = plab_ai_denoise(imgid, float(strength), &path, &err);
+  const QString p = QString::fromUtf8(path ? path : "");
+  plab_free(path);
+  emit aiDenoised(id, p, takeError(err));
+}
+
 void EngineWorker::stop()
 {
   plab_shutdown();
