@@ -111,6 +111,9 @@ public:
   bool hasImage() const { return m_imgid >= 0; }
   QString imageName() const;
   QUrl exportSuggestion() const;
+  // Qt's own save dialog leaves its name field empty whatever selectedFile
+  // says; this fills it, in whichever window the dialog opened
+  Q_INVOKABLE bool fillSaveDialogName(const QString &name);
   QString previewSource() const;
   double asShotTemperature() const { return m_asShot; }
   QVariantMap adjust() const { return m_adjust; }

@@ -22,6 +22,9 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QRunnable>
 #include <QSettings>
 
@@ -458,6 +461,30 @@ QUrl LabController::exportSuggestion() const
   if(QFileInfo(out).absoluteFilePath() == src.absoluteFilePath())
     out = src.dir().filePath(src.completeBaseName() + QStringLiteral("_edit.jpg"));
   return QUrl::fromLocalFile(out);
+}
+
+static QQuickItem *findItem(QQuickItem *item, const QString &name)
+{
+  if(!item) return nullptr;
+  if(item->objectName() == name) return item;
+  for(QQuickItem *child : item->childItems())
+    if(QQuickItem *hit = findItem(child, name)) return hit;
+  return nullptr;
+}
+
+bool LabController::fillSaveDialogName(const QString &name)
+{
+  // objectName from QtQuick/Dialogs/quickimpl/qml/FileDialog.qml; a native
+  // dialog has no such field and fills its name from selectedFile itself
+  for(QWindow *w : QGuiApplication::allWindows())
+    if(auto *qw = qobject_cast<QQuickWindow *>(w))
+      if(QQuickItem *field = findItem(qw->contentItem(), QStringLiteral("fileNameTextField")))
+        if(field->isVisible())
+        {
+          field->setProperty("text", name);
+          return true;
+        }
+  return false;
 }
 
 void LabController::exportTo(const QUrl &url, int quality)

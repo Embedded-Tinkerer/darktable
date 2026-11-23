@@ -21,6 +21,16 @@ ApplicationWindow {
 
     function adj(key) { return lab.adjust[key] }
 
+    // Export opens on the photo's own folder and name, as .jpg
+    function openExportDialog() {
+        const url = lab.exportSuggestion.toString()
+        exportDialog.currentFolder = url.substring(0, url.lastIndexOf("/"))
+        exportDialog.selectedFile = lab.exportSuggestion
+        exportDialog.open()
+        exportNameTimer.tries = 0
+        exportNameTimer.start()
+    }
+
     header: ToolBar {
         Material.background: Theme.panel
         RowLayout {
@@ -76,13 +86,7 @@ ApplicationWindow {
                 text: "Export"
                 visible: lab.mode === "develop"
                 enabled: lab.hasImage
-                onClicked: {
-                    // the photo's own folder and name, as .jpg
-                    const url = lab.exportSuggestion.toString()
-                    exportDialog.currentFolder = url.substring(0, url.lastIndexOf("/"))
-                    exportDialog.selectedFile = lab.exportSuggestion
-                    exportDialog.open()
-                }
+                onClicked: win.openExportDialog()
             }
         }
     }
@@ -607,6 +611,19 @@ ApplicationWindow {
         title: "Open a photo"
         nameFilters: ["Photos (*.cr2 *.cr3 *.nef *.arw *.raf *.orf *.rw2 *.dng *.pef *.srw *.jpg *.jpeg *.tif *.tiff *.png *.heic *.avif)", "All files (*)"]
         onAccepted: lab.openFile(selectedFile)
+    }
+    // the dialog's name field exists only once it is shown, a moment after open()
+    Timer {
+        id: exportNameTimer
+        property int tries: 0
+        interval: 50
+        repeat: true
+        onTriggered: {
+            const url = lab.exportSuggestion.toString()
+            if(lab.fillSaveDialogName(decodeURIComponent(url.substring(url.lastIndexOf("/") + 1)))
+               || ++tries > 20)
+                stop()
+        }
     }
     FileDialog {
         id: exportDialog
