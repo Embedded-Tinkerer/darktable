@@ -94,6 +94,10 @@ char *plab_list_styles(void);
 /** export full size; format from the extension (jpg, png, tif, webp...) */
 int plab_export(int imgid, const char *out_path, int quality, char **err);
 
+/** plab_export fitting the long edge into max_size pixels; 0 is full size */
+int plab_export_sized(int imgid, const char *out_path, int quality, int max_size,
+                      char **err);
+
 /** where lut3d resolves relative LUT paths; the app keeps its LUTs there */
 void plab_set_lut_folder(const char *folder);
 

@@ -146,6 +146,27 @@ LabController::LabController(PreviewProvider *provider, ThumbnailProvider *thumb
     emit thumbsChanged();
     if(m_mode == QLatin1String("library")) refreshImages();
   });
+  connect(m_worker, &EngineWorker::exportProgress, this,
+          [this](int done, int total, const QString &file) {
+    m_exportDone = done;
+    m_exportTotal = total;
+    m_exportFile = file;
+    emit exportChanged();
+  });
+  connect(m_worker, &EngineWorker::exportFinished, this,
+          [this](int done, int total, const QString &folder, const QString &error) {
+    setInFlight(false);
+    m_exportDone = m_exportTotal = 0;
+    m_exportFile.clear();
+    m_lastExportFolder = QUrl::fromLocalFile(folder);
+    emit exportChanged();
+    if(!error.isEmpty())
+      setMessage(tr("exported %1 of %2 photos: %3").arg(done).arg(total).arg(error));
+    else if(done < total)
+      setMessage(tr("export stopped after %1 of %2 photos").arg(done).arg(total));
+    else
+      setMessage(tr("exported %n photo(s) to %1", nullptr, done).arg(QDir(folder).dirName()));
+  });
   connect(m_worker, &EngineWorker::batchDone, this, [this](const QString &m) {
     setInFlight(false);
     setMessage(m);
@@ -235,6 +256,7 @@ void LabController::start(const QStringList &coreArgs, const QString &stylesDir,
                           const QString &lutDir, const QString &dataDir)
 {
   m_lutDir = lutDir;
+  emit lutCollectionChanged();
   // the bundled styles go into the library once; after that they are the
   // user's to rename or delete
   QSettings settings(QDir(dataDir).filePath(QStringLiteral("photographylab.ini")),
@@ -543,8 +565,79 @@ QString LabController::copyLut(const QUrl &url)
   {
     QFile::remove(dst);
     QFile::copy(src, dst);
+    emit lutCollectionChanged();
   }
   return fi.fileName();
+}
+
+static const QStringList kLutPatterns = { QStringLiteral("*.cube"), QStringLiteral("*.3dl"),
+                                          QStringLiteral("*.png") };
+
+QStringList LabController::lutCollection() const
+{
+  if(m_lutDir.isEmpty()) return {};
+  return QDir(m_lutDir).entryList(kLutPatterns, QDir::Files, QDir::Name | QDir::IgnoreCase);
+}
+
+int LabController::importLuts(const QVariantList &urls)
+{
+  int n = 0;
+  for(const QVariant &v : urls)
+  {
+    const QUrl url = v.toUrl();
+    const QFileInfo fi(url.toLocalFile());
+    if(fi.isDir())
+    {
+      const QStringList files = QDir(fi.filePath()).entryList(kLutPatterns, QDir::Files);
+      for(const QString &f : files)
+        if(!copyLut(QUrl::fromLocalFile(QDir(fi.filePath()).filePath(f))).isEmpty()) n++;
+    }
+    else if(!copyLut(url).isEmpty())
+      n++;
+  }
+  setMessage(tr("%n LUT(s) in your collection now", nullptr, int(lutCollection().size())));
+  return n;
+}
+
+void LabController::toggleLut(const QString &file)
+{
+  for(int i = 0; i < m_luts.size(); i++)
+    if(m_luts[i].toMap().value(QStringLiteral("file")).toString() == file)
+    {
+      removeLut(i);
+      return;
+    }
+  m_luts.append(QVariantMap{ { QStringLiteral("file"), file },
+                             { QStringLiteral("strength"), 100.0 } });
+  emit lutsChanged();
+  scheduleRender();
+}
+
+void LabController::moveLut(int from, int to)
+{
+  if(from < 0 || from >= m_luts.size() || to < 0 || to >= m_luts.size() || from == to) return;
+  m_luts.move(from, to);
+  emit lutsChanged();
+  scheduleRender();
+}
+
+void LabController::clearLuts()
+{
+  if(m_luts.isEmpty()) return;
+  m_luts.clear();
+  emit lutsChanged();
+  scheduleRender();
+}
+
+void LabController::addLutsToSelected(const QStringList &files)
+{
+  if(files.isEmpty() || m_selected.isEmpty()) return;
+  QVariantList luts;
+  for(const QString &f : files)
+    luts << QVariantMap{ { QStringLiteral("file"), f }, { QStringLiteral("strength"), 100.0 } };
+  setInFlight(true);
+  setMessage(tr("adding %1 LUT(s) to %2 photo(s)...").arg(files.size()).arg(m_selected.size()));
+  emit requestAddLuts(m_selected, luts);
 }
 
 void LabController::addLutToSelected(const QUrl &url)
@@ -582,12 +675,22 @@ void LabController::pasteEditToSelected()
   emit requestPaste(m_selected, m_copied, m_copiedStyle);
 }
 
-void LabController::exportSelected(const QUrl &folder, int quality)
+void LabController::exportSelected(const QUrl &folder, const QVariantMap &options)
 {
-  if(m_selected.isEmpty()) return;
+  const QString dir = folder.isLocalFile() ? folder.toLocalFile() : folder.toString();
+  if(m_selected.isEmpty() || dir.isEmpty() || exporting()) return;
   setInFlight(true);
-  setMessage(tr("exporting %n photo(s)...", nullptr, int(m_selected.size())));
-  emit requestExportImages(m_selected, folder.toLocalFile(), quality);
+  m_exportDone = 0;
+  m_exportTotal = int(m_selected.size());
+  emit exportChanged();
+  setMessage(tr("exporting %n photo(s)...", nullptr, m_exportTotal));
+  emit requestExportImages(m_selected, dir, options);
+}
+
+void LabController::cancelExport()
+{
+  // straight to the worker: its queue is busy with the export itself
+  m_worker->cancelExport();
 }
 
 void LabController::openImage(int imgid)

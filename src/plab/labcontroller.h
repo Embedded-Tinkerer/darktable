@@ -68,6 +68,8 @@ class LabController : public QObject
   Q_PROPERTY(double asShotTemperature READ asShotTemperature NOTIFY imageChanged)
   Q_PROPERTY(QVariantMap adjust READ adjust NOTIFY adjustChanged)
   Q_PROPERTY(QVariantList luts READ luts NOTIFY lutsChanged)
+  // every LUT in the app's LUT folder: the collection to pick from
+  Q_PROPERTY(QStringList lutCollection READ lutCollection NOTIFY lutCollectionChanged)
   Q_PROPERTY(QStringList styles READ styles NOTIFY stylesChanged)
   Q_PROPERTY(QString currentStyle READ currentStyle NOTIFY currentStyleChanged)
   Q_PROPERTY(QString message READ message NOTIFY messageChanged)
@@ -81,6 +83,11 @@ class LabController : public QObject
   Q_PROPERTY(int currentImage READ currentImage NOTIFY imageChanged)
   Q_PROPERTY(QVariantMap thumbVersions READ thumbVersions NOTIFY thumbsChanged)
   Q_PROPERTY(bool hasCopiedEdit READ hasCopiedEdit NOTIFY copiedEditChanged)
+  Q_PROPERTY(bool exporting READ exporting NOTIFY exportChanged)
+  Q_PROPERTY(int exportDone READ exportDone NOTIFY exportChanged)
+  Q_PROPERTY(int exportTotal READ exportTotal NOTIFY exportChanged)
+  Q_PROPERTY(QString exportFile READ exportFile NOTIFY exportChanged)
+  Q_PROPERTY(QUrl lastExportFolder READ lastExportFolder NOTIFY exportChanged)
 
 public:
   LabController(PreviewProvider *provider, ThumbnailProvider *thumbs,
@@ -98,6 +105,12 @@ public:
   double asShotTemperature() const { return m_asShot; }
   QVariantMap adjust() const { return m_adjust; }
   QVariantList luts() const { return m_luts; }
+  QStringList lutCollection() const;
+  bool exporting() const { return m_exportTotal > 0; }
+  int exportDone() const { return m_exportDone; }
+  int exportTotal() const { return m_exportTotal; }
+  QString exportFile() const { return m_exportFile; }
+  QUrl lastExportFolder() const { return m_lastExportFolder; }
   QStringList styles() const { return m_styles; }
   QString currentStyle() const { return m_style; }
   QString message() const { return m_message; }
@@ -126,10 +139,14 @@ public:
   Q_INVOKABLE void rejectSelected();
   Q_INVOKABLE void toggleLabelSelected(int color);
   Q_INVOKABLE void addLutToSelected(const QUrl &url);
+  // LUTs of the collection, in this order, on top of each selected photo's own
+  Q_INVOKABLE void addLutsToSelected(const QStringList &files);
   Q_INVOKABLE void styleSelected(const QString &name);
   Q_INVOKABLE void copyEdit();
   Q_INVOKABLE void pasteEditToSelected();
-  Q_INVOKABLE void exportSelected(const QUrl &folder, int quality);
+  // options: see EngineWorker::exportImages()
+  Q_INVOKABLE void exportSelected(const QUrl &folder, const QVariantMap &options);
+  Q_INVOKABLE void cancelExport();
   Q_INVOKABLE void openImage(int imgid);
   Q_INVOKABLE void openNeighbour(int step);
 
@@ -141,6 +158,12 @@ public:
   Q_INVOKABLE void addLut(const QUrl &url);
   Q_INVOKABLE void removeLut(int index);
   Q_INVOKABLE void setLutStrength(int index, double strength);
+  // copy LUT files, or every LUT in folders, into the collection; nothing is applied
+  Q_INVOKABLE int importLuts(const QVariantList &urls);
+  // a LUT of the collection on (on top of the stack) or off, rendered at once
+  Q_INVOKABLE void toggleLut(const QString &file);
+  Q_INVOKABLE void moveLut(int from, int to);
+  Q_INVOKABLE void clearLuts();
   Q_INVOKABLE void exportTo(const QUrl &url, int quality);
   Q_INVOKABLE void setViewSize(int width, int height);
   Q_INVOKABLE void showOriginal(bool on);
@@ -152,6 +175,8 @@ signals:
   void previewChanged();
   void adjustChanged();
   void lutsChanged();
+  void lutCollectionChanged();
+  void exportChanged();
   void stylesChanged();
   void currentStyleChanged();
   void messageChanged();
@@ -179,7 +204,7 @@ signals:
   void requestAddLuts(const QList<int> &ids, const QVariantList &luts);
   void requestStyleImages(const QList<int> &ids, const QString &style);
   void requestPaste(const QList<int> &ids, const QVariantMap &edit, const QString &style);
-  void requestExportImages(const QList<int> &ids, const QString &folder, int quality);
+  void requestExportImages(const QList<int> &ids, const QString &folder, const QVariantMap &options);
 
 private:
   static QVariantMap defaultAdjust();
@@ -223,6 +248,10 @@ private:
   bool m_rejected = false;
   int m_listGeneration = 0;
   QList<int> m_selected;
+  int m_exportDone = 0;
+  int m_exportTotal = 0;
+  QString m_exportFile;
+  QUrl m_lastExportFolder;
   int m_anchor = -1;
   QVariantMap m_thumbVersions;
   QVariantMap m_copied;

@@ -24,7 +24,7 @@ DESTDIR="$APPDIR" cmake --install "$BUILD"
 
 install -Dm644 packaging/photographylab/photographylab.desktop \
   "$APPDIR/usr/share/applications/photographylab.desktop"
-install -Dm644 data/pixmaps/scalable/darktable.svg \
+install -Dm644 src/plab/icons/photographylab.svg \
   "$APPDIR/usr/share/icons/hicolor/scalable/apps/photographylab.svg"
 
 # newest lens profiles, when the build host fetched them (lensfun-update-data)
@@ -46,6 +46,13 @@ export DISABLE_COPYRIGHT_FILES_DEPLOYMENT=1
 export LINUXDEPLOY_OUTPUT_VERSION=$(git -C "$SRC" rev-parse --short HEAD)
 export OUTPUT=PhotographyLAB-$LINUXDEPLOY_OUTPUT_VERSION-$ARCH.AppImage
 
+# linuxdeploy-plugin-qt ships the wayland platform plugins but not the client
+# buffer integrations they load, and without wayland-egl Qt Quick finds no
+# OpenGL and aborts on a Wayland desktop. copied by hand, deps deployed below
+QT_PLUGINS=$("$QMAKE" -query QT_INSTALL_PLUGINS)
+mkdir -p "$APPDIR/usr/plugins"
+cp -a "$QT_PLUGINS/wayland-graphics-integration-client" "$APPDIR/usr/plugins/"
+
 PLUGINS=$APPDIR/usr/lib/$ARCH-linux-gnu/darktable
 [ -d "$PLUGINS" ] || PLUGINS=$APPDIR/usr/lib/darktable
 
@@ -58,5 +65,6 @@ PLUGINS=$APPDIR/usr/lib/$ARCH-linux-gnu/darktable
   --deploy-deps-only "$PLUGINS/plugins" \
   --deploy-deps-only "$PLUGINS/plugins/imageio/format" \
   --deploy-deps-only "$PLUGINS/plugins/imageio/storage" \
+  --deploy-deps-only "$APPDIR/usr/plugins/wayland-graphics-integration-client" \
   --plugin qt \
   --output appimage

@@ -20,6 +20,7 @@
 
 #include <QHash>
 #include <QImage>
+#include <QAtomicInt>
 #include <QObject>
 #include <QStringList>
 #include <QVariantMap>
@@ -54,7 +55,9 @@ public slots:
   void addLuts(const QList<int> &ids, const QVariantList &luts);
   void styleImages(const QList<int> &ids, const QString &style);
   void pasteEdit(const QList<int> &ids, const QVariantMap &edit, const QString &style);
-  void exportImages(const QList<int> &ids, const QString &folder, int quality);
+  // options: format (jpg, tif, png, webp), quality, maxSize (long edge, 0 full),
+  // naming (original, suffix, sequence), suffix, base; files never overwrite
+  void exportImages(const QList<int> &ids, const QString &folder, const QVariantMap &options);
   void stop();
 
 signals:
@@ -73,6 +76,12 @@ signals:
   // images whose look or labels changed, so their thumbnails reload
   void imagesChanged(const QList<int> &ids);
   void batchDone(const QString &message);
+  void exportProgress(int done, int total, const QString &file);
+  void exportFinished(int done, int total, const QString &folder, const QString &error);
+
+public:
+  // set from the UI thread; the export loop stops before its next photo
+  void cancelExport() { m_cancelExport.storeRelaxed(1); }
 
 private:
   struct Record
@@ -94,6 +103,7 @@ private:
   QString m_storePath;  // per-image bases and slider state, as JSON
   QHash<int, Record> m_records;
   int m_imgid = -1;
+  QAtomicInt m_cancelExport;
   double m_asShot = 0.0;
   QString m_lutDir;
 };

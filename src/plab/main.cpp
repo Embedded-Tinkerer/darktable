@@ -22,6 +22,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
@@ -36,6 +37,9 @@ int main(int argc, char *argv[])
   QGuiApplication app(argc, argv);
   app.setApplicationName(QStringLiteral("photographylab"));
   app.setApplicationDisplayName(QStringLiteral("PhotographyLAB"));
+  app.setWindowIcon(QIcon(QStringLiteral(":/PhotographyLab/icons/photographylab-256.png")));
+  // Wayland finds the window's icon through the .desktop file of this name
+  app.setDesktopFileName(QStringLiteral("photographylab"));
   QQuickStyle::setStyle(QStringLiteral("Material"));
 
   QCommandLineParser cli;
@@ -158,7 +162,7 @@ int main(int argc, char *argv[])
     {
       // the library: once the grid is filled, give the thumbnails time to load
       auto armed = std::make_shared<bool>(false);
-      QObject::connect(&lab, &LabController::imagesChanged, &lab, [shoot, &lab, armed] {
+      QObject::connect(&lab, &LabController::imagesChanged, &lab, [shoot, &lab, armed, window, out] {
         if(lab.busy() || lab.images().isEmpty() || *armed) return;
         *armed = true;
         // batch actions on everything shown, for checking them without a person
@@ -171,6 +175,25 @@ int main(int argc, char *argv[])
         if(!rate.isEmpty()) lab.rateSelected(rate.toInt());
         if(!lut.isEmpty()) lab.addLutToSelected(QUrl::fromLocalFile(lut));
         if(!style.isEmpty()) lab.styleSelected(style);
+        const QString exportDir = qEnvironmentVariable("PLAB_BATCH_EXPORT");
+        if(!exportDir.isEmpty())
+        {
+          // the shot is taken mid-export, to show the progress bar, and the
+          // app quits once the export has finished
+          lab.selectAll();
+          QObject::connect(&lab, &LabController::exportChanged, &lab, [&lab, window, out] {
+            if(lab.exportDone() == 1 && lab.exporting()) window->grabWindow().save(out);
+            if(!lab.exporting()) QTimer::singleShot(300, &lab, [] { QCoreApplication::quit(); });
+          });
+          lab.exportSelected(QUrl::fromLocalFile(exportDir),
+                             { { QStringLiteral("format"), qEnvironmentVariable("PLAB_EXPORT_FORMAT", QStringLiteral("jpg")) },
+                               { QStringLiteral("quality"), 90 },
+                               { QStringLiteral("maxSize"), qEnvironmentVariableIntValue("PLAB_EXPORT_SIZE") },
+                               { QStringLiteral("naming"), qEnvironmentVariable("PLAB_EXPORT_NAMING", QStringLiteral("original")) },
+                               { QStringLiteral("suffix"), QStringLiteral("_edit") },
+                               { QStringLiteral("base"), QStringLiteral("shoot") } });
+          return;
+        }
         shoot(lut.isEmpty() && style.isEmpty() ? 6000 : 25000);
       });
     }

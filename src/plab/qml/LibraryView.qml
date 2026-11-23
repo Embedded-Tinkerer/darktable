@@ -217,6 +217,39 @@ Item {
                 }
             }
 
+            // ---------------------------------------------------- export progress
+            Rectangle {
+                visible: lab.exporting
+                Layout.fillWidth: true
+                implicitHeight: exportRow.implicitHeight + 12
+                color: Theme.panelRaised
+                RowLayout {
+                    id: exportRow
+                    anchors.fill: parent
+                    anchors.leftMargin: 12
+                    anchors.rightMargin: 8
+                    spacing: 12
+                    Text {
+                        text: "Exporting " + Math.min(lab.exportDone + 1, lab.exportTotal) + " of " + lab.exportTotal
+                              + (lab.exportFile ? "  " + lab.exportFile : "")
+                        color: Theme.text
+                        elide: Text.ElideMiddle
+                        Layout.preferredWidth: 320
+                    }
+                    ProgressBar {
+                        from: 0
+                        to: Math.max(1, lab.exportTotal)
+                        value: lab.exportDone
+                        Layout.fillWidth: true
+                    }
+                    Button {
+                        text: "Cancel"
+                        flat: true
+                        onClicked: lab.cancelExport()
+                    }
+                }
+            }
+
             // ----------------------------------------------- selection actions
             Rectangle {
                 Layout.fillWidth: true
@@ -261,9 +294,9 @@ Item {
                     }
                     ToolSeparator {}
                     Button {
-                        text: "+ Add LUT to selected"
+                        text: "+ Add LUTs to selected"
                         highlighted: true
-                        onClicked: lutDialog.open()
+                        onClicked: { lutPopup.picked = []; lutPopup.open() }
                     }
                     Button {
                         text: "Style..."
@@ -279,7 +312,8 @@ Item {
                     }
                     Button {
                         text: "Export..."
-                        onClicked: exportFolderDialog.open()
+                        enabled: !lab.exporting
+                        onClicked: exportPopup.open()
                     }
                 }
             }
@@ -320,6 +354,92 @@ Item {
         }
     }
 
+    // several LUTs from the collection, in the order they are picked
+    Popup {
+        id: lutPopup
+        property var picked: []
+        anchors.centerIn: parent
+        width: Math.min(root.width - 32, 520)
+        height: Math.min(root.height - 32, 600)
+        modal: true
+        ColumnLayout {
+            anchors.fill: parent
+            Text {
+                text: "Add LUTs to " + root.selectedCount + " photos"
+                color: Theme.text
+                font.pixelSize: 16
+            }
+            Text {
+                text: "Pick one or more; they stack on top of each photo's own LUTs in the order picked."
+                color: Theme.textDim
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                TextField {
+                    id: lutSearch
+                    placeholderText: "search LUTs"
+                    Layout.fillWidth: true
+                }
+                ToolButton { text: "Import"; onClicked: lutDialog.open() }
+            }
+            ListView {
+                id: lutList
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                model: lab.lutCollection.filter(f => f.toLowerCase().indexOf(lutSearch.text.toLowerCase()) >= 0)
+                delegate: ItemDelegate {
+                    id: pick
+                    required property string modelData
+                    readonly property int position: lutPopup.picked.indexOf(modelData)
+                    width: lutList.width
+                    highlighted: position >= 0
+                    onClicked: {
+                        const p = lutPopup.picked.slice()
+                        if(position >= 0) p.splice(position, 1)
+                        else p.push(modelData)
+                        lutPopup.picked = p
+                    }
+                    contentItem: RowLayout {
+                        spacing: 8
+                        Rectangle {
+                            implicitWidth: 22; implicitHeight: 22; radius: 11
+                            color: pick.position >= 0 ? Theme.accent : "transparent"
+                            border.width: pick.position >= 0 ? 0 : 2
+                            border.color: Theme.textDim
+                            Text {
+                                anchors.centerIn: parent
+                                text: pick.position >= 0 ? pick.position + 1 : ""
+                                color: Theme.window
+                                font.bold: true
+                                font.pixelSize: 12
+                            }
+                        }
+                        Text {
+                            text: pick.modelData.replace(/\.[^.]+$/, "")
+                            color: Theme.text
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Button { text: "Cancel"; flat: true; onClicked: lutPopup.close() }
+                Button {
+                    text: lutPopup.picked.length > 1 ? "Add " + lutPopup.picked.length + " LUTs" : "Add LUT"
+                    highlighted: true
+                    enabled: lutPopup.picked.length > 0
+                    onClicked: { lab.addLutsToSelected(lutPopup.picked); lutPopup.close() }
+                }
+            }
+        }
+    }
+
     Shortcut { sequences: ["0"]; enabled: root.visible; onActivated: lab.rateSelected(0) }
     Shortcut { sequences: ["1"]; enabled: root.visible; onActivated: lab.rateSelected(1) }
     Shortcut { sequences: ["2"]; enabled: root.visible; onActivated: lab.rateSelected(2) }
@@ -338,12 +458,187 @@ Item {
     FolderDialog {
         id: exportFolderDialog
         title: "Export the selected photos to"
-        onAccepted: lab.exportSelected(selectedFolder, 92)
+        onAccepted: exportPopup.folder = selectedFolder
+    }
+
+    // batch export: where, as what, how big, and how the files are named
+    Popup {
+        id: exportPopup
+        property url folder: lab.lastExportFolder
+        property bool openWhenDone: false
+        anchors.centerIn: parent
+        width: Math.min(root.width - 32, 520)
+        modal: true
+
+        function folderText(u) { return u.toString().replace(/^file:\/\//, "") }
+        function options() {
+            return {
+                format: formatBox.currentValue,
+                quality: Math.round(qualitySlider.value),
+                maxSize: sizeBox.currentValue >= 0 ? sizeBox.currentValue : customSize.value,
+                naming: namingBox.currentValue,
+                suffix: suffixField.text,
+                base: baseField.text
+            }
+        }
+        function example() {
+            const ext = "." + formatBox.currentValue
+            if(namingBox.currentValue === "sequence") return (baseField.text || "photo") + "_001" + ext
+            return "DSC01234" + (namingBox.currentValue === "suffix" ? suffixField.text : "") + ext
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 8
+            Text {
+                text: "Export " + root.selectedCount + " photo" + (root.selectedCount === 1 ? "" : "s")
+                color: Theme.text
+                font.pixelSize: 16
+            }
+
+            SectionHeader { title: "Folder" }
+            RowLayout {
+                Layout.fillWidth: true
+                Text {
+                    text: exportPopup.folder.toString() ? exportPopup.folderText(exportPopup.folder) : "choose a folder"
+                    color: exportPopup.folder.toString() ? Theme.text : Theme.textDim
+                    elide: Text.ElideMiddle
+                    Layout.fillWidth: true
+                }
+                Button { text: "Choose..."; onClicked: exportFolderDialog.open() }
+            }
+
+            SectionHeader { title: "File" }
+            GridLayout {
+                columns: 2
+                columnSpacing: 12
+                Layout.fillWidth: true
+                Text { text: "Format"; color: Theme.text }
+                ComboBox {
+                    id: formatBox
+                    Layout.fillWidth: true
+                    textRole: "text"
+                    valueRole: "value"
+                    model: [
+                        { value: "jpg", text: "JPEG" },
+                        { value: "tif", text: "TIFF (16-bit)" },
+                        { value: "png", text: "PNG" },
+                        { value: "webp", text: "WebP" }
+                    ]
+                }
+                Text {
+                    text: "Quality " + Math.round(qualitySlider.value)
+                    color: Theme.text
+                    visible: qualitySlider.visible
+                }
+                Slider {
+                    id: qualitySlider
+                    visible: formatBox.currentValue === "jpg" || formatBox.currentValue === "webp"
+                    from: 50; to: 100; stepSize: 1; value: 92
+                    Layout.fillWidth: true
+                }
+                Text { text: "Size"; color: Theme.text }
+                RowLayout {
+                    Layout.fillWidth: true
+                    ComboBox {
+                        id: sizeBox
+                        Layout.fillWidth: true
+                        textRole: "text"
+                        valueRole: "value"
+                        model: [
+                            { value: 0, text: "Full size" },
+                            { value: 4096, text: "4096 px long edge" },
+                            { value: 2560, text: "2560 px long edge" },
+                            { value: 2048, text: "2048 px (web, print proofs)" },
+                            { value: 1080, text: "1080 px (Instagram)" },
+                            { value: -1, text: "Custom" }
+                        ]
+                    }
+                    SpinBox {
+                        id: customSize
+                        visible: sizeBox.currentValue < 0
+                        from: 256; to: 16384; stepSize: 100; value: 3000
+                        editable: true
+                    }
+                }
+            }
+
+            SectionHeader { title: "Names" }
+            GridLayout {
+                columns: 2
+                columnSpacing: 12
+                Layout.fillWidth: true
+                Text { text: "Name"; color: Theme.text }
+                ComboBox {
+                    id: namingBox
+                    Layout.fillWidth: true
+                    textRole: "text"
+                    valueRole: "value"
+                    model: [
+                        { value: "original", text: "Original name" },
+                        { value: "suffix", text: "Original name + text" },
+                        { value: "sequence", text: "Name + number" }
+                    ]
+                }
+                Text { text: "Text"; color: Theme.text; visible: suffixField.visible }
+                TextField {
+                    id: suffixField
+                    visible: namingBox.currentValue === "suffix"
+                    text: "_edit"
+                    Layout.fillWidth: true
+                }
+                Text { text: "Name"; color: Theme.text; visible: baseField.visible }
+                TextField {
+                    id: baseField
+                    visible: namingBox.currentValue === "sequence"
+                    text: "photo"
+                    Layout.fillWidth: true
+                }
+            }
+            Text {
+                text: "e.g. " + exportPopup.example() + ". Existing files are never overwritten."
+                color: Theme.textDim
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            CheckBox {
+                text: "Open the folder when done"
+                checked: exportPopup.openWhenDone
+                onToggled: exportPopup.openWhenDone = checked
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Button { text: "Cancel"; flat: true; onClicked: exportPopup.close() }
+                Button {
+                    text: "Export " + root.selectedCount
+                    highlighted: true
+                    enabled: exportPopup.folder.toString() !== "" && root.selectedCount > 0
+                    onClicked: {
+                        exportPopup.pendingOpen = exportPopup.openWhenDone
+                        lab.exportSelected(exportPopup.folder, exportPopup.options())
+                        exportPopup.close()
+                    }
+                }
+            }
+        }
+
+        property bool pendingOpen: false
+        Connections {
+            target: lab
+            function onExportChanged() {
+                if(!lab.exporting && exportPopup.pendingOpen && lab.lastExportFolder.toString()) {
+                    exportPopup.pendingOpen = false
+                    Qt.openUrlExternally(lab.lastExportFolder)
+                }
+            }
+        }
     }
     FileDialog {
         id: lutDialog
-        title: "Add a LUT to the selected photos"
+        title: "Import LUTs into your collection"
+        fileMode: FileDialog.OpenFiles
         nameFilters: ["LUTs (*.cube *.3dl *.png)", "All files (*)"]
-        onAccepted: lab.addLutToSelected(selectedFile)
+        onAccepted: lab.importLuts(selectedFiles)
     }
 }

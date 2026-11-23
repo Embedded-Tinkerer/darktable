@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- PhotographyLAB: an aperture whose blades are a color grade -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#323946"/>
+      <stop offset="1" stop-color="#171a20"/>
+    </linearGradient>
+    <radialGradient id="hole" cx="0.42" cy="0.38" r="0.7">
+      <stop offset="0" stop-color="#2a3140"/>
+      <stop offset="1" stop-color="#0d0f13"/>
+    </radialGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="54" fill="url(#tile)"/>
+  <circle cx="128.0" cy="128.0" r="94.0" fill="#0f1115"/>
+  <circle cx="128.0" cy="128.0" r="94.0" fill="none" stroke="#e6e9ee" stroke-opacity="0.85" stroke-width="5"/>
+  <g stroke="#0f1115" stroke-width="3.5" stroke-linejoin="round">
+    <path d="M 161.67 123.27 L 148.93 154.79 L 125.83 211.97 A 84 84 0 0 0 199.64 171.86 Z" fill="#2ec4b6"/>
+    <path d="M 148.93 154.79 L 115.26 159.52 L 54.19 168.11 A 84 84 0 0 0 125.83 211.97 Z" fill="#4da3ff"/>
+    <path d="M 115.26 159.52 L 94.33 132.73 L 56.36 84.14 A 84 84 0 0 0 54.19 168.11 Z" fill="#6c63ff"/>
+    <path d="M 94.33 132.73 L 107.07 101.21 L 130.17 44.03 A 84 84 0 0 0 56.36 84.14 Z" fill="#9b5de5"/>
+    <path d="M 107.07 101.21 L 140.74 96.48 L 201.81 87.89 A 84 84 0 0 0 130.17 44.03 Z" fill="#f15bb5"/>
+    <path d="M 140.74 96.48 L 161.67 123.27 L 199.64 171.86 A 84 84 0 0 0 201.81 87.89 Z" fill="#ff9f43"/>
+  </g>
+  <polygon points="161.67,123.27 148.93,154.79 115.26,159.52 94.33,132.73 107.07,101.21 140.74,96.48" fill="url(#hole)"/>
+  <circle cx="119.0" cy="118.0" r="6" fill="#ffffff" fill-opacity="0.55"/>
+  <circle cx="128.0" cy="128.0" r="94.0" fill="url(#shine)"/>
+</svg>

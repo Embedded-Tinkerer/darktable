@@ -312,10 +312,10 @@ ApplicationWindow {
                             x: Theme.gutter
                             spacing: 6
 
-                            SectionHeader { title: "LUT stack" }
+                            SectionHeader { title: "LUTs on this photo" }
                             Text {
                                 visible: lab.luts.length === 0
-                                text: "No LUTs yet. Add .cube, .3dl or .png LUTs; each one stacks on top of the last."
+                                text: "None. Click LUTs in the collection below to switch them on; several stack, and every click shows at once."
                                 color: Theme.textDim
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
@@ -336,11 +336,26 @@ ApplicationWindow {
                                         spacing: 0
                                         RowLayout {
                                             Layout.fillWidth: true
+                                            spacing: 0
                                             Text {
                                                 text: (index + 1) + ". " + modelData.file.replace(/\.[^.]+$/, "")
                                                 color: Theme.text
                                                 elide: Text.ElideRight
                                                 Layout.fillWidth: true
+                                            }
+                                            ToolButton {
+                                                text: "▲"
+                                                enabled: index > 0
+                                                onClicked: lab.moveLut(index, index - 1)
+                                                ToolTip.visible: hovered
+                                                ToolTip.text: "apply earlier"
+                                            }
+                                            ToolButton {
+                                                text: "▼"
+                                                enabled: index < lab.luts.length - 1
+                                                onClicked: lab.moveLut(index, index + 1)
+                                                ToolTip.visible: hovered
+                                                ToolTip.text: "apply later"
                                             }
                                             ToolButton {
                                                 text: "✕"
@@ -357,9 +372,75 @@ ApplicationWindow {
                                 }
                             }
                             Button {
-                                text: "+ Add LUT"
-                                highlighted: true
-                                onClicked: lutDialog.open()
+                                visible: lab.luts.length > 1
+                                text: "Remove all"
+                                flat: true
+                                Layout.alignment: Qt.AlignRight
+                                onClicked: lab.clearLuts()
+                            }
+
+                            SectionHeader { title: "LUT collection" }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                TextField {
+                                    id: lutFilter
+                                    placeholderText: "search LUTs"
+                                    Layout.fillWidth: true
+                                }
+                                ToolButton {
+                                    text: "Import"
+                                    onClicked: lutDialog.open()
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: "add .cube, .3dl or .png LUT files; pick as many as you like"
+                                }
+                                ToolButton {
+                                    text: "Folder"
+                                    onClicked: lutFolderDialog.open()
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: "add every LUT in a folder"
+                                }
+                            }
+                            Text {
+                                visible: lab.lutCollection.length === 0
+                                text: "Your collection is empty. Import LUT files or a whole folder of them."
+                                color: Theme.textDim
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+                            Repeater {
+                                model: lab.lutCollection.filter(f => f.toLowerCase().indexOf(lutFilter.text.toLowerCase()) >= 0)
+                                delegate: ItemDelegate {
+                                    id: lutItem
+                                    required property string modelData
+                                    readonly property int position: lab.luts.findIndex(l => l.file === modelData)
+                                    Layout.fillWidth: true
+                                    padding: 6
+                                    highlighted: position >= 0
+                                    enabled: lab.hasImage
+                                    onClicked: lab.toggleLut(modelData)
+                                    contentItem: RowLayout {
+                                        spacing: 8
+                                        Rectangle {
+                                            implicitWidth: 22; implicitHeight: 22; radius: 11
+                                            color: lutItem.position >= 0 ? Theme.accent : "transparent"
+                                            border.width: lutItem.position >= 0 ? 0 : 2
+                                            border.color: Theme.textDim
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: lutItem.position >= 0 ? lutItem.position + 1 : ""
+                                                color: Theme.window
+                                                font.bold: true
+                                                font.pixelSize: 12
+                                            }
+                                        }
+                                        Text {
+                                            text: lutItem.modelData.replace(/\.[^.]+$/, "")
+                                            color: Theme.text
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+                                }
                             }
 
                             SectionHeader { title: "Styles" }
@@ -470,9 +551,15 @@ ApplicationWindow {
     }
     FileDialog {
         id: lutDialog
-        title: "Add a LUT"
+        title: "Import LUTs into your collection"
+        fileMode: FileDialog.OpenFiles
         nameFilters: ["LUTs (*.cube *.3dl *.png)", "All files (*)"]
-        onAccepted: lab.addLut(selectedFile)
+        onAccepted: lab.importLuts(selectedFiles)
+    }
+    FolderDialog {
+        id: lutFolderDialog
+        title: "Import every LUT in a folder"
+        onAccepted: lab.importLuts([selectedFolder])
     }
     FileDialog {
         id: styleDialog

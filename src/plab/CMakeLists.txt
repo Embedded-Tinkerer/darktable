@@ -32,7 +32,10 @@ qt_add_qml_module(photographylab
     qml/LibraryView.qml
     qml/AdjustSlider.qml
     qml/SectionHeader.qml
-    qml/Theme.qml)
+    qml/Theme.qml
+  # a PNG for the window: the AppImage carries no SVG image plugin
+  RESOURCES
+    icons/photographylab-256.png)
 
 set_target_properties(photographylab PROPERTIES
   CXX_STANDARD 17
@@ -58,6 +61,14 @@ if(NOT WIN32)
 endif()
 
 install(TARGETS photographylab DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT DTApplication)
+
+install(FILES icons/photographylab.svg
+        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps
+        COMPONENT DTApplication)
+install(FILES icons/photographylab-256.png
+        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/256x256/apps
+        RENAME photographylab.png
+        COMPONENT DTApplication)
 
 file(GLOB PLAB_STYLES ${CMAKE_CURRENT_SOURCE_DIR}/styles/*.dtstyle)
 install(FILES ${PLAB_STYLES}

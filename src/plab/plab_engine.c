@@ -491,6 +491,12 @@ char *plab_list_styles(void)
 
 int plab_export(int imgid, const char *out_path, int quality, char **err)
 {
+  return plab_export_sized(imgid, out_path, quality, 0, err);
+}
+
+int plab_export_sized(int imgid, const char *out_path, int quality, int max_size,
+                      char **err)
+{
   const char *dot = strrchr(out_path, '.');
   gchar *ext = g_ascii_strdown(dot ? dot + 1 : "jpg", -1);
   const char *name = !strcmp(ext, "jpg") ? "jpeg" : !strcmp(ext, "tif") ? "tiff" : ext;
@@ -512,8 +518,9 @@ int plab_export(int imgid, const char *out_path, int quality, char **err)
     _seterr(err, "export format '%s' failed", fmt->plugin_name);
     return -1;
   }
-  fdata->max_width = 0;
-  fdata->max_height = 0;
+  // a square bound limits the long edge whichever way the photo is turned
+  fdata->max_width = MAX(max_size, 0);
+  fdata->max_height = MAX(max_size, 0);
   fdata->style[0] = '\0';
   fdata->style_append = TRUE;
 

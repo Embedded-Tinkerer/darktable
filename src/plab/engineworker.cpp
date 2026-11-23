@@ -479,7 +479,7 @@ void EngineWorker::addLuts(const QList<int> &ids, const QVariantList &luts)
     if(_commit(id, rec, edit, &lastError)) done++;
   }
   emit imagesChanged(ids);
-  emit batchDone(lastError.isEmpty() ? tr("LUT added to %n photo(s)", nullptr, done) : lastError);
+  emit batchDone(lastError.isEmpty() ? tr("LUTs added to %n photo(s)", nullptr, done) : lastError);
 }
 
 void EngineWorker::styleImages(const QList<int> &ids, const QString &style)
@@ -516,30 +516,63 @@ void EngineWorker::pasteEdit(const QList<int> &ids, const QVariantMap &edit, con
                                      : lastError);
 }
 
-void EngineWorker::exportImages(const QList<int> &ids, const QString &folder, int quality)
+void EngineWorker::exportImages(const QList<int> &ids, const QString &folder,
+                                const QVariantMap &options)
 {
+  const QString format = options.value(QStringLiteral("format"), QStringLiteral("jpg")).toString();
+  const int quality = options.value(QStringLiteral("quality"), 92).toInt();
+  const int maxSize = options.value(QStringLiteral("maxSize"), 0).toInt();
+  const QString naming = options.value(QStringLiteral("naming"), QStringLiteral("original")).toString();
+  const QString suffix = options.value(QStringLiteral("suffix")).toString();
+  QString base = options.value(QStringLiteral("base")).toString().trimmed();
+  if(base.isEmpty()) base = QStringLiteral("photo");
+
+  QDir().mkpath(folder);
+  m_cancelExport.storeRelaxed(0);
+
+  // the library's file names: the kept photos, then the rejected ones, which
+  // can be selected too
+  QHash<int, QString> paths;
+  for(const int rejected : { 0, 1 })
+  {
+    char *list = plab_list_images(-1, 0, rejected);
+    for(const QString &line : QString::fromUtf8(list).split(QLatin1Char('\n'), Qt::SkipEmptyParts))
+    {
+      const QStringList f = line.split(QLatin1Char('\t'));
+      paths.insert(f.value(0).toInt(), f.value(1));
+    }
+    plab_free(list);
+  }
+
+  const int digits = qMax(3, int(QString::number(ids.size()).size()));
   int done = 0;
   QString lastError;
-  char *list = plab_list_images(-1, 0, 0);
-  QHash<int, QString> paths;
-  for(const QString &line : QString::fromUtf8(list).split(QLatin1Char('\n'), Qt::SkipEmptyParts))
+  for(int i = 0; i < ids.size(); i++)
   {
-    const QStringList f = line.split(QLatin1Char('\t'));
-    paths.insert(f.value(0).toInt(), f.value(1));
-  }
-  plab_free(list);
-  // rejected images are not in that list, but exporting them is still asked for
-  for(int id : ids)
-  {
-    const QString name = paths.contains(id) ? QFileInfo(paths[id]).completeBaseName()
-                                            : QString::number(id);
-    const QString out = QDir(folder).filePath(name + QStringLiteral(".jpg"));
+    if(m_cancelExport.loadRelaxed()) break;
+    const int id = ids[i];
+    const QString original = paths.contains(id) ? QFileInfo(paths[id]).completeBaseName()
+                                                : QString::number(id);
+    QString name = naming == QLatin1String("sequence")
+                     ? base + QLatin1Char('_') + QStringLiteral("%1").arg(i + 1, digits, 10, QLatin1Char('0'))
+                   : naming == QLatin1String("suffix") ? original + suffix
+                                                       : original;
+    // a raw and its camera JPEG share a name; neither may replace the other,
+    // nor anything already in the folder
+    QString out = QDir(folder).filePath(name + QLatin1Char('.') + format);
+    for(int n = 2; QFileInfo::exists(out); n++)
+      out = QDir(folder).filePath(QStringLiteral("%1_%2.%3").arg(name).arg(n).arg(format));
+
+    emit exportProgress(i, ids.size(), QFileInfo(out).fileName());
     char *err = nullptr;
-    if(plab_export(id, QFile::encodeName(out).constData(), quality, &err) == 0) done++;
-    else lastError = takeError(err), err = nullptr;
+    if(plab_export_sized(id, QFile::encodeName(out).constData(), quality, maxSize, &err) == 0)
+      done++;
+    else
+      lastError = takeError(err), err = nullptr;
     plab_free(err);
   }
-  emit batchDone(lastError.isEmpty() ? tr("exported %n photo(s)", nullptr, done) : lastError);
+  emit exportProgress(ids.size(), ids.size(), QString());
+  emit exportFinished(done, int(ids.size()), folder, lastError);
 }
 
 void EngineWorker::stop()
