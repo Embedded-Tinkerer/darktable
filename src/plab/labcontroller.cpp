@@ -449,9 +449,26 @@ void LabController::setLutStrength(int index, double strength)
   scheduleRender();
 }
 
+QUrl LabController::exportSuggestion() const
+{
+  if(m_path.isEmpty()) return {};
+  const QFileInfo src(m_path);
+  QString out = src.dir().filePath(src.completeBaseName() + QStringLiteral(".jpg"));
+  // a JPEG would get its own name: the export must never replace the original
+  if(QFileInfo(out).absoluteFilePath() == src.absoluteFilePath())
+    out = src.dir().filePath(src.completeBaseName() + QStringLiteral("_edit.jpg"));
+  return QUrl::fromLocalFile(out);
+}
+
 void LabController::exportTo(const QUrl &url, int quality)
 {
   if(m_imgid < 0) return;
+  // the dialog asks before replacing a file, but the photo itself is never one
+  if(QFileInfo(url.toLocalFile()).absoluteFilePath() == QFileInfo(m_path).absoluteFilePath())
+  {
+    setMessage(tr("pick another name: exporting over the original photo is not allowed"));
+    return;
+  }
   setInFlight(true);
   setMessage(tr("exporting..."));
   emit requestExport(url.toLocalFile(), quality);

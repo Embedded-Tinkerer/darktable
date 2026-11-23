@@ -64,6 +64,8 @@ class LabController : public QObject
   Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
   Q_PROPERTY(bool hasImage READ hasImage NOTIFY imageChanged)
   Q_PROPERTY(QString imageName READ imageName NOTIFY imageChanged)
+  // where Export suggests saving the open photo: its folder and name as .jpg
+  Q_PROPERTY(QUrl exportSuggestion READ exportSuggestion NOTIFY imageChanged)
   Q_PROPERTY(QString previewSource READ previewSource NOTIFY previewChanged)
   Q_PROPERTY(double asShotTemperature READ asShotTemperature NOTIFY imageChanged)
   Q_PROPERTY(QVariantMap adjust READ adjust NOTIFY adjustChanged)
@@ -108,6 +110,7 @@ public:
   bool busy() const { return m_inFlight; }
   bool hasImage() const { return m_imgid >= 0; }
   QString imageName() const;
+  QUrl exportSuggestion() const;
   QString previewSource() const;
   double asShotTemperature() const { return m_asShot; }
   QVariantMap adjust() const { return m_adjust; }

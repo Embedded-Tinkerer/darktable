@@ -76,7 +76,13 @@ ApplicationWindow {
                 text: "Export"
                 visible: lab.mode === "develop"
                 enabled: lab.hasImage
-                onClicked: exportDialog.open()
+                onClicked: {
+                    // the photo's own folder and name, as .jpg
+                    const url = lab.exportSuggestion.toString()
+                    exportDialog.currentFolder = url.substring(0, url.lastIndexOf("/"))
+                    exportDialog.selectedFile = lab.exportSuggestion
+                    exportDialog.open()
+                }
             }
         }
     }
